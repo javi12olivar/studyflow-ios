@@ -37,8 +37,8 @@ public struct ContentView: View {
         .tint(.orange)
         .environmentObject(streakManager)
         .environmentObject(planManager)
-        .onChange(of: scenePhase) { phase in
-            if phase == .background || phase == .inactive {
+        .onChange(of: scenePhase) {
+            if scenePhase == .background || scenePhase == .inactive {
                 planManager.savePlans()
                 streakManager.saveStreak()
                 UserDefaults.standard.synchronize()

@@ -231,13 +231,13 @@ public struct ApiConfigurationSheet: View {
             .onDisappear {
                 saveKeysSilently()
             }
-            .onChange(of: groqKey) { _ in
+            .onChange(of: groqKey) {
                 saveKeysSilently()
             }
-            .onChange(of: geminiKey) { _ in
+            .onChange(of: geminiKey) {
                 saveKeysSilently()
             }
-            .onChange(of: mistralKey) { _ in
+            .onChange(of: mistralKey) {
                 saveKeysSilently()
             }
         }
