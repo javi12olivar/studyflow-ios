@@ -1,6 +1,7 @@
 ﻿import SwiftUI
 
 public struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var streakManager = StreakManager()
     @StateObject private var planManager = ExamPlanManager()
     @State private var selectedTab: Int = 0
@@ -36,6 +37,11 @@ public struct ContentView: View {
         .tint(.orange)
         .environmentObject(streakManager)
         .environmentObject(planManager)
+        .onChange(of: scenePhase) { phase in
+            if phase == .background || phase == .inactive {
+                UserDefaults.standard.synchronize()
+            }
+        }
     }
 }
 
