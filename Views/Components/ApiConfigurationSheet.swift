@@ -169,13 +169,13 @@ public struct ApiConfigurationSheet: View {
                             Spacer()
                             if savedSuccess {
                                 Image(systemName: "checkmark")
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 15, weight: .bold))
                                 Text("¡Claves Guardadas en Keychain!")
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 15, weight: .bold))
                             } else {
                                 Image(systemName: "lock.shield.fill")
                                 Text("Guardar Configuración")
-                                    .fontWeight(.semibold)
+                                    .font(.system(size: 15, weight: .semibold))
                             }
                             Spacer()
                         }

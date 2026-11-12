@@ -24,7 +24,6 @@ jobs:
 
       - name: Build Archive
         run: |
-          set -o pipefail
           xcodebuild archive \
             -project StudyFlow.xcodeproj \
             -scheme StudyFlow \
@@ -32,14 +31,7 @@ jobs:
             -archivePath "build/StudyFlow.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" > build.log 2>&1 || {
-              echo "### Xcode Build Failed" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              grep -E "(error:|fatal error:)" -B 1 -A 3 build.log | tail -n 40 >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              cat build.log | tail -n 60
-              exit 1
-            }
+            CODE_SIGN_IDENTITY=""
 
       - name: Package IPA
         run: |
