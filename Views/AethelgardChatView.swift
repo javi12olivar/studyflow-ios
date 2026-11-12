@@ -33,13 +33,10 @@ public struct ChatSession: Identifiable, Codable, Equatable {
 }
 
 // MARK: - Aethelgard Chat View
+@MainActor
 public struct AethelgardChatView: View {
     @ObservedObject var streakManager: StreakManager
     @ObservedObject var planManager: ExamPlanManager
-    
-    @ObservedObject private var groqService = GroqService.shared
-    @ObservedObject private var geminiService = GeminiService.shared
-    @ObservedObject private var mistralService = MistralService.shared
     
     @State private var sessions: [ChatSession] = []
     @State private var activeSessionId: String = ""
@@ -118,11 +115,11 @@ public struct AethelgardChatView: View {
                             }
                             HStack(spacing: 6) {
                                 Circle()
-                                    .fill(groqService.apiKey.count > 5 ? Color.orange : (mistralService.apiKey.count > 5 ? Color.purple : (geminiService.apiKey.count > 10 ? Color.green : Color.gray)))
+                                    .fill(GroqService.shared.apiKey.count > 5 ? Color.orange : (MistralService.shared.apiKey.count > 5 ? Color.purple : (GeminiService.shared.apiKey.count > 10 ? Color.green : Color.gray)))
                                     .frame(width: 7, height: 7)
-                                Text(groqService.apiKey.count > 5 ? "Groq 70B Conectado" : (mistralService.apiKey.count > 5 ? "Mistral Large 123B Conectado" : (geminiService.apiKey.count > 10 ? "Gemini Flash Conectado" : "Toca aquí para configurar API Keys")))
+                                Text(GroqService.shared.apiKey.count > 5 ? "Groq 70B Conectado" : (MistralService.shared.apiKey.count > 5 ? "Mistral Large 123B Conectado" : (GeminiService.shared.apiKey.count > 10 ? "Gemini Flash Conectado" : "Toca aquí para configurar API Keys")))
                                     .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(groqService.apiKey.count > 5 || mistralService.apiKey.count > 5 || geminiService.apiKey.count > 10 ? .secondary : .orange)
+                                    .foregroundColor(GroqService.shared.apiKey.count > 5 || MistralService.shared.apiKey.count > 5 || GeminiService.shared.apiKey.count > 10 ? .secondary : .orange)
                             }
                         }
                         

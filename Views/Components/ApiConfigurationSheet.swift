@@ -1,6 +1,7 @@
 import SwiftUI
 
 // MARK: - API Configuration Sheet
+@MainActor
 public struct ApiConfigurationSheet: View {
     @Environment(\.dismiss) private var dismiss
     

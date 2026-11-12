@@ -1,5 +1,6 @@
 ﻿import SwiftUI
 
+@MainActor
 public struct AIPlanCreationSheet: View {
     @ObservedObject var planManager: ExamPlanManager
     @Environment(\.dismiss) private var dismiss
