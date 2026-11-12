@@ -10,8 +10,8 @@ public final class GroqService: ObservableObject {
     private let keychainKey = "sf_groq_api_key"
     
     @Published public var apiKey: String = ""
-    public let model: String = "llama-3.3-70b-versatile"
-    public let fallbackModel: String = "llama-3.1-8b-instant"
+    public let model: String = "openai/gpt-oss-120b"
+    public let fallbackModel: String = "openai/gpt-oss-120b"
     
     private init() {
         if let saved = UserDefaults.standard.string(forKey: keychainKey), !saved.isEmpty {

@@ -78,10 +78,10 @@ public struct ApiConfigurationSheet: View {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill")
                             .foregroundColor(.orange)
-                        Text("Groq Cloud (Llama 3.3 70B)")
+                        Text("Groq Cloud (GPT-OSS 120B)")
                     }
                 } footer: {
-                    Text("Recomendada para el tutor Aethelgard: respuestas instantáneas a más de 300 tokens/s con Llama 3.3 70B Versatile.")
+                    Text("Recomendada para el tutor Aethelgard: modelo insignia OpenAI GPT-OSS de 120 Billones de parámetros con respuestas instantáneas a más de 300 tokens/s.")
                 }
                 
                 // GOOGLE GEMINI (Prioritario para planificación de exámenes)
@@ -228,6 +228,18 @@ public struct ApiConfigurationSheet: View {
             .onAppear {
                 loadKeys()
             }
+            .onDisappear {
+                saveKeysSilently()
+            }
+            .onChange(of: groqKey) { _ in
+                saveKeysSilently()
+            }
+            .onChange(of: geminiKey) { _ in
+                saveKeysSilently()
+            }
+            .onChange(of: mistralKey) { _ in
+                saveKeysSilently()
+            }
         }
     }
     
@@ -239,8 +251,7 @@ public struct ApiConfigurationSheet: View {
     }
     
     @MainActor
-    private func saveKeys() {
-        HapticManager.shared.success()
+    private func saveKeysSilently() {
         let trimmedGroq = groqKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedGemini = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedMistral = mistralKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -250,6 +261,12 @@ public struct ApiConfigurationSheet: View {
         MistralService.shared.saveApiKey(trimmedMistral)
         
         UserDefaults.standard.synchronize()
+    }
+    
+    @MainActor
+    private func saveKeys() {
+        saveKeysSilently()
+        HapticManager.shared.success()
         
         withAnimation {
             savedSuccess = true

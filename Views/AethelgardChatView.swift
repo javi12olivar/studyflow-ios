@@ -117,7 +117,7 @@ public struct AethelgardChatView: View {
                                 Circle()
                                     .fill(GroqService.shared.apiKey.count > 5 ? Color.orange : (MistralService.shared.apiKey.count > 5 ? Color.purple : (GeminiService.shared.apiKey.count > 10 ? Color.green : Color.gray)))
                                     .frame(width: 7, height: 7)
-                                Text(GroqService.shared.apiKey.count > 5 ? "Groq 70B Conectado" : (MistralService.shared.apiKey.count > 5 ? "Mistral Large 123B Conectado" : (GeminiService.shared.apiKey.count > 10 ? "Gemini Flash Conectado" : "Toca aquí para configurar API Keys")))
+                                Text(GroqService.shared.apiKey.count > 5 ? "Groq 120B Conectado" : (MistralService.shared.apiKey.count > 5 ? "Mistral Large 123B Conectado" : (GeminiService.shared.apiKey.count > 10 ? "Gemini Flash Conectado" : "Toca aquí para configurar API Keys")))
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundColor(GroqService.shared.apiKey.count > 5 || MistralService.shared.apiKey.count > 5 || GeminiService.shared.apiKey.count > 10 ? .secondary : .orange)
                             }

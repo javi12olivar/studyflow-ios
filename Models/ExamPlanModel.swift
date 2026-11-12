@@ -47,9 +47,17 @@ public struct ExamStep: Identifiable, Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        self.title = try container.decode(String.self, forKey: .title)
+        self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Paso de estudio"
         self.isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
-        self.targetDate = try container.decodeIfPresent(Date.self, forKey: .targetDate)
+        if let d = try? container.decode(Date.self, forKey: .targetDate) {
+            self.targetDate = d
+        } else if let s = try? container.decode(String.self, forKey: .targetDate) {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            self.targetDate = df.date(from: s)
+        } else {
+            self.targetDate = nil
+        }
         self.estimatedMinutes = try container.decodeIfPresent(Int.self, forKey: .estimatedMinutes) ?? 30
     }
 }
@@ -80,8 +88,16 @@ public struct ExamChapter: Identifiable, Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        self.title = try container.decode(String.self, forKey: .title)
-        self.recommendedDate = try container.decodeIfPresent(Date.self, forKey: .recommendedDate)
+        self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Capítulo"
+        if let d = try? container.decode(Date.self, forKey: .recommendedDate) {
+            self.recommendedDate = d
+        } else if let s = try? container.decode(String.self, forKey: .recommendedDate) {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            self.recommendedDate = df.date(from: s)
+        } else {
+            self.recommendedDate = nil
+        }
         self.steps = try container.decodeIfPresent([ExamStep].self, forKey: .steps) ?? []
     }
     
@@ -127,10 +143,31 @@ public struct ExamPlan: Identifiable, Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        self.title = try container.decode(String.self, forKey: .title)
-        self.subject = try container.decode(String.self, forKey: .subject)
-        self.examDate = try container.decode(Date.self, forKey: .examDate)
-        self.difficulty = try container.decodeIfPresent(ExamDifficulty.self, forKey: .difficulty) ?? .medium
+        self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Examen"
+        self.subject = try container.decodeIfPresent(String.self, forKey: .subject) ?? "General"
+        
+        if let d = try? container.decode(Date.self, forKey: .examDate) {
+            self.examDate = d
+        } else if let s = try? container.decode(String.self, forKey: .examDate) {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            self.examDate = df.date(from: s) ?? Date()
+        } else {
+            self.examDate = Date()
+        }
+        
+        if let diff = try? container.decode(ExamDifficulty.self, forKey: .difficulty) {
+            self.difficulty = diff
+        } else if let str = try? container.decode(String.self, forKey: .difficulty) {
+            switch str.lowercased() {
+            case "fácil", "facil", "easy": self.difficulty = .easy
+            case "difícil", "dificil", "hard": self.difficulty = .hard
+            default: self.difficulty = .medium
+            }
+        } else {
+            self.difficulty = .medium
+        }
+        
         self.colorTag = try container.decodeIfPresent(String.self, forKey: .colorTag)
         self.chapters = try container.decodeIfPresent([ExamChapter].self, forKey: .chapters) ?? []
     }
@@ -167,22 +204,26 @@ public class ExamPlanManager: ObservableObject {
     }
     
     private let storageKey = "sf_exam_study_plans"
+    private let initializedKey = "sf_plans_initialized_v2"
     
     public init() {
         loadPlans()
-        if plans.isEmpty {
+        if plans.isEmpty && !UserDefaults.standard.bool(forKey: initializedKey) {
             createDemoPlans()
+            UserDefaults.standard.set(true, forKey: initializedKey)
+            savePlans()
         }
     }
     
-    private func savePlans() {
+    public func savePlans() {
         if let encoded = try? JSONEncoder().encode(plans) {
             UserDefaults.standard.set(encoded, forKey: storageKey)
+            UserDefaults.standard.set(true, forKey: initializedKey)
             UserDefaults.standard.synchronize()
         }
     }
     
-    private func loadPlans() {
+    public func loadPlans() {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([ExamPlan].self, from: data) {
             self.plans = decoded
