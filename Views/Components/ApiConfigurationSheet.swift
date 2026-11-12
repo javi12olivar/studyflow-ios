@@ -19,7 +19,7 @@ public struct ApiConfigurationSheet: View {
     
     public var body: some View {
         NavigationStack {
-            Form {
+            List {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
@@ -36,7 +36,7 @@ public struct ApiConfigurationSheet: View {
                 }
                 
                 // GROQ (Prioritario para chat ultra-rápido)
-                Section(header: Label("Groq Cloud (Llama 3.3 70B)", systemImage: "bolt.fill")) {
+                Section {
                     HStack {
                         if showGroqKey {
                             TextField("gsk_...", text: $groqKey)
@@ -74,12 +74,18 @@ public struct ApiConfigurationSheet: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                } header: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(.orange)
+                        Text("Groq Cloud (Llama 3.3 70B)")
+                    }
                 } footer: {
                     Text("Recomendada para el tutor Aethelgard: respuestas instantáneas a más de 300 tokens/s con Llama 3.3 70B Versatile.")
                 }
                 
                 // GOOGLE GEMINI (Prioritario para planificación de exámenes)
-                Section(header: Label("Google Gemini (Flash 1.5)", systemImage: "sparkles")) {
+                Section {
                     HStack {
                         if showGeminiKey {
                             TextField("AIzaSy...", text: $geminiKey)
@@ -117,12 +123,18 @@ public struct ApiConfigurationSheet: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                } header: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(.orange)
+                        Text("Google Gemini (Flash 1.5)")
+                    }
                 } footer: {
                     Text("Utilizada para estructurar temarios de examen complejos con curva del olvido y fechas en tu Calendario Maestro.")
                 }
                 
                 // MISTRAL AI
-                Section(header: Label("Mistral AI", systemImage: "waveform")) {
+                Section {
                     HStack {
                         if showMistralKey {
                             TextField("Clave de API Mistral...", text: $mistralKey)
@@ -160,6 +172,12 @@ public struct ApiConfigurationSheet: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                } header: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform")
+                            .foregroundColor(.orange)
+                        Text("Mistral AI")
+                    }
                 }
                 
                 // BOTÓN GUARDAR
@@ -184,6 +202,7 @@ public struct ApiConfigurationSheet: View {
                     .listRowBackground(savedSuccess ? Color.green : Color.orange)
                 }
             }
+            .listStyle(.insetGrouped)
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Configuración de IA")
             .navigationBarTitleDisplayMode(.inline)
