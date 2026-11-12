@@ -218,7 +218,8 @@ public struct ApiConfigurationSheet: View {
             savedSuccess = true
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
             withAnimation {
                 savedSuccess = false
             }
