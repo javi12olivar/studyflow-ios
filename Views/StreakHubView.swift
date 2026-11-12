@@ -3,6 +3,7 @@ import SwiftUI
 public struct StreakHubView: View {
     @ObservedObject var streakManager: StreakManager
     @State private var showingUnfreezeSheet = false
+    @State private var showingApiSettings = false
     @State private var animateNumber = false
     
     public init(streakManager: StreakManager) {
@@ -39,19 +40,34 @@ public struct StreakHubView: View {
                         
                         Spacer()
                         
-                        // Freeze Token Pill
-                        HStack(spacing: 6) {
-                            Image(systemName: "snowflake")
-                                .foregroundColor(.cyan)
-                                .font(.system(size: 14, weight: .bold))
-                            Text("\(streakManager.freezeCount)")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.primary)
+                        HStack(spacing: 8) {
+                            // Freeze Token Pill
+                            HStack(spacing: 6) {
+                                Image(systemName: "snowflake")
+                                    .foregroundColor(.cyan)
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("\(streakManager.freezeCount)")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.cyan.opacity(0.12))
+                            .cornerRadius(20)
+                            
+                            // API Settings Gear Button
+                            Button(action: {
+                                HapticManager.shared.light()
+                                showingApiSettings = true
+                            }) {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .padding(8)
+                                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                                    .clipShape(Circle())
+                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.cyan.opacity(0.12))
-                        .cornerRadius(20)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
@@ -214,6 +230,9 @@ public struct StreakHubView: View {
             .navigationTitle("Mi Racha")
             .sheet(isPresented: $showingUnfreezeSheet) {
                 StreakUnfreezeSheet(streakManager: streakManager)
+            }
+            .sheet(isPresented: $showingApiSettings) {
+                ApiConfigurationSheet()
             }
         }
     }

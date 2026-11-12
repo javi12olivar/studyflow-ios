@@ -37,9 +37,14 @@ public struct AethelgardChatView: View {
     @ObservedObject var streakManager: StreakManager
     @ObservedObject var planManager: ExamPlanManager
     
+    @ObservedObject private var groqService = GroqService.shared
+    @ObservedObject private var geminiService = GeminiService.shared
+    @ObservedObject private var mistralService = MistralService.shared
+    
     @State private var sessions: [ChatSession] = []
     @State private var activeSessionId: String = ""
     @State private var showingSessionsSheet: Bool = false
+    @State private var showingApiSettings: Bool = false
     
     @State private var inputText: String = ""
     @State private var isThinking: Bool = false
@@ -87,48 +92,61 @@ public struct AethelgardChatView: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Header Status Bar
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(Color(UIColor.secondarySystemGroupedBackground))
-                        .frame(width: 36, height: 36)
-                        .overlay(
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.primary)
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Aethelgard Study AI")
-                            .font(.system(size: 15, weight: .bold))
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(GroqService.shared.apiKey.count > 5 ? Color.orange : (MistralService.shared.apiKey.count > 5 ? Color.purple : (GeminiService.shared.apiKey.count > 10 ? Color.green : Color.gray)))
-                                .frame(width: 7, height: 7)
-                            Text(GroqService.shared.apiKey.count > 5 ? "Groq 70B Conectado" : (MistralService.shared.apiKey.count > 5 ? "Mistral Large 123B Conectado" : (GeminiService.shared.apiKey.count > 10 ? "Gemini Flash Conectado" : "Modo Pedagógico Activo")))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
+                // Header Status Bar (Tappable for API Settings)
+                Button(action: {
+                    HapticManager.shared.light()
+                    showingApiSettings = true
+                }) {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.primary)
+                            )
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text("Aethelgard Study AI")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.primary)
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(groqService.apiKey.count > 5 ? Color.orange : (mistralService.apiKey.count > 5 ? Color.purple : (geminiService.apiKey.count > 10 ? Color.green : Color.gray)))
+                                    .frame(width: 7, height: 7)
+                                Text(groqService.apiKey.count > 5 ? "Groq 70B Conectado" : (mistralService.apiKey.count > 5 ? "Mistral Large 123B Conectado" : (geminiService.apiKey.count > 10 ? "Gemini Flash Conectado" : "Toca aquí para configurar API Keys")))
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(groqService.apiKey.count > 5 || mistralService.apiKey.count > 5 || geminiService.apiKey.count > 10 ? .secondary : .orange)
+                            }
                         }
+                        
+                        Spacer()
+                        
+                        // Student Context Pill
+                        HStack(spacing: 6) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                            Text("\(streakManager.currentStreak)d")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.orange.opacity(0.12))
+                        .cornerRadius(12)
                     }
-                    
-                    Spacer()
-                    
-                    // Student Context Pill
-                    HStack(spacing: 6) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(.orange)
-                        Text("\(streakManager.currentStreak)d")
-                            .font(.system(size: 12, weight: .bold))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.orange.opacity(0.12))
-                    .cornerRadius(12)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color(UIColor.secondarySystemGroupedBackground))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color(UIColor.secondarySystemGroupedBackground))
+                .buttonStyle(.plain)
                 
                 Divider()
                 
@@ -264,15 +282,29 @@ public struct AethelgardChatView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        HapticManager.shared.light()
-                        showingSessionsSheet = true
-                    }) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.secondary)
+                    HStack(spacing: 14) {
+                        Button(action: {
+                            HapticManager.shared.light()
+                            showingApiSettings = true
+                        }) {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                        }
+                        
+                        Button(action: {
+                            HapticManager.shared.light()
+                            showingSessionsSheet = true
+                        }) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+            }
+            .sheet(isPresented: $showingApiSettings) {
+                ApiConfigurationSheet()
             }
             .sheet(isPresented: $showingSessionsSheet) {
                 ChatSessionsSheet(

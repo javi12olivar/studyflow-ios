@@ -10,6 +10,7 @@ public struct AIPlanCreationSheet: View {
     @State private var difficulty: ExamDifficulty = .medium
     @State private var notes: String = ""
     @State private var isGenerating: Bool = false
+    @State private var showingApiSettings: Bool = false
     
     public init(planManager: ExamPlanManager) {
         self.planManager = planManager
@@ -52,8 +53,28 @@ public struct AIPlanCreationSheet: View {
                         }
                     }
                     .foregroundColor(.white)
-                    .listRowBackground(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
+                    .listRowBackground(Color.orange)
                     .disabled(subject.trimmingCharacters(in: .whitespaces).isEmpty || isGenerating)
+                }
+                
+                if GeminiService.shared.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Section {
+                        Button(action: { showingApiSettings = true }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "key.fill")
+                                    .foregroundColor(.orange)
+                                Text("Configurar API Key de Gemini")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } footer: {
+                        Text("Introduce tu clave gratuita de Google Gemini para habilitar el desglose inteligente.")
+                    }
                 }
             }
             .navigationTitle("Crear Plan con IA")
@@ -62,6 +83,9 @@ public struct AIPlanCreationSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showingApiSettings) {
+                ApiConfigurationSheet()
             }
         }
     }
