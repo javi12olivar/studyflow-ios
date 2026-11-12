@@ -1,0 +1,659 @@
+﻿import Foundation
+import Security
+import OSLog
+
+// MARK: - Native Secure Keychain Helper
+public enum KeychainHelper {
+    private static let serviceName = "com.studyflow.gemini"
+    
+    public static func save(key: String, data: Data) -> Bool {
+        let searchQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key
+        ]
+        
+        let attributesToUpdate: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        
+        let updateStatus = SecItemUpdate(searchQuery as CFDictionary, attributesToUpdate as CFDictionary)
+        if updateStatus == errSecSuccess { return true }
+        
+        if updateStatus == errSecItemNotFound {
+            var insertQuery = searchQuery
+            insertQuery[kSecValueData as String] = data
+            insertQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            return SecItemAdd(insertQuery as CFDictionary, nil) == errSecSuccess
+        }
+        return false
+    }
+    
+    public static func load(key: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: kCFBooleanTrue as Any,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var dataTypeRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+        if status == errSecSuccess {
+            return dataTypeRef as? Data
+        }
+        return nil
+    }
+    
+    public static func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+// MARK: - Quiz Question Model for iOS
+public struct QuizQuestion: Identifiable, Codable, Equatable, Sendable {
+    public var id = UUID()
+    public let question: String
+    public let options: [String]
+    public let correctIndex: Int
+    public let explanation: String
+    
+    enum CodingKeys: String, CodingKey {
+        case question, options, correctIndex, explanation
+    }
+}
+
+// MARK: - Gemini API DTO Models
+private struct GeminiContentPart: Codable {
+    let text: String
+}
+
+private struct GeminiContent: Codable {
+    let parts: [GeminiContentPart]
+}
+
+private struct GeminiGenerationConfig: Codable {
+    let responseMimeType: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case responseMimeType = "response_mime_type"
+    }
+}
+
+private struct GeminiRequest: Codable {
+    let contents: [GeminiContent]
+    let generationConfig: GeminiGenerationConfig?
+}
+
+private struct GeminiResponse: Codable {
+    struct Candidate: Codable {
+        struct Content: Codable {
+            struct Part: Codable {
+                let text: String?
+            }
+            let parts: [Part]?
+        }
+        let content: Content?
+    }
+    let candidates: [Candidate]?
+}
+
+// MARK: - Gemini Service
+@MainActor
+public final class GeminiService: ObservableObject {
+    public static let shared = GeminiService()
+    
+    private static let logger = Logger(subsystem: "com.studyflow.app", category: "GeminiService")
+    private let keyStorageAccount = "sf_gemini_api_key"
+    
+    @Published public var apiKey: String = "" {
+        didSet {
+            persistApiKey(apiKey)
+        }
+    }
+    
+    private init() {
+        self.apiKey = loadApiKey()
+    }
+    
+    private func loadApiKey() -> String {
+        // First check secure Keychain
+        if let data = KeychainHelper.load(key: keyStorageAccount),
+           let key = String(data: data, encoding: .utf8), !key.isEmpty {
+            return key
+        }
+        
+        // One-time graceful migration from legacy UserDefaults
+        if let legacyKey = UserDefaults.standard.string(forKey: keyStorageAccount), !legacyKey.isEmpty {
+            if let data = legacyKey.data(using: .utf8) {
+                _ = KeychainHelper.save(key: keyStorageAccount, data: data)
+            }
+            UserDefaults.standard.removeObject(forKey: keyStorageAccount)
+            return legacyKey
+        }
+        
+        return ""
+    }
+    
+    private func persistApiKey(_ key: String) {
+        if key.isEmpty {
+            KeychainHelper.delete(key: keyStorageAccount)
+        } else if let data = key.data(using: .utf8) {
+            _ = KeychainHelper.save(key: keyStorageAccount, data: data)
+        }
+    }
+    
+    // MARK: - Generate Exam Plan
+    public func generateStudyPlan(
+        subject: String,
+        title: String,
+        examDate: Date,
+        difficulty: ExamDifficulty,
+        notes: String
+    ) async -> ExamPlan {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        let dateStr = dateFormatter.string(from: examDate)
+        
+        if key.count > 10 {
+            let prompt = """
+            Eres Aethelgard Study AI, tutor pedagógico inteligente en StudyFlow.
+            Genera un plan de estudio estructurado con Spaced Repetition para el siguiente examen:
+            - Asignatura: "\(subject)"
+            - Título: "\(title)"
+            - Fecha del Examen: "\(dateStr)"
+            - Dificultad: "\(difficulty.rawValue)"
+            - Notas/Temario: "\(notes)"
+
+            Responde OBLIGATORIAMENTE en JSON puro válido conforme a este esquema:
+            {
+              "chapters": [
+                {
+                  "title": "Nombre del Capítulo",
+                  "steps": [
+                    { "title": "Nombre del paso de estudio", "estimatedMinutes": 40 }
+                  ]
+                }
+              ]
+            }
+            """
+            
+            if let plan = await callGeminiForPlan(prompt: prompt, key: key, subject: subject, title: title, examDate: examDate, difficulty: difficulty) {
+                return plan
+            }
+        }
+        
+        // Smart Local Spaced Repetition Fallback
+        return generateLocalPlan(subject: subject, title: title, examDate: examDate, difficulty: difficulty, notes: notes)
+    }
+    
+    private func callGeminiForPlan(
+        prompt: String,
+        key: String,
+        subject: String,
+        title: String,
+        examDate: Date,
+        difficulty: ExamDifficulty
+    ) async -> ExamPlan? {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") else {
+            Self.logger.error("Invalid Gemini API URL endpoint")
+            return nil
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        
+        let payload = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiContentPart(text: prompt)])],
+            generationConfig: GeminiGenerationConfig(responseMimeType: "application/json")
+        )
+        
+        do {
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpRes = response as? HTTPURLResponse else {
+                Self.logger.warning("No HTTP response received from Gemini API")
+                return nil
+            }
+            
+            guard httpRes.statusCode == 200 else {
+                Self.logger.warning("Gemini plan generation failed with status code: \(httpRes.statusCode)")
+                return nil
+            }
+            
+            let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            if let text = decoded.candidates?.first?.content?.parts?.first?.text {
+                var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let match = text.range(of: #"\{[\s\S]*\}"#, options: .regularExpression) {
+                    cleaned = String(text[match])
+                }
+                
+                if let planData = cleaned.data(using: .utf8),
+                   let parsed = try? JSONSerialization.jsonObject(with: planData) as? [String: Any],
+                   let chaptersArray = parsed["chapters"] as? [[String: Any]] {
+                    
+                    let calendar = Calendar.current
+                    let startOfToday = calendar.startOfDay(for: Date())
+                    let startOfExam = calendar.startOfDay(for: examDate)
+                    let daysUntilExam = max(1, calendar.dateComponents([.day], from: startOfToday, to: startOfExam).day ?? 7)
+                    
+                    var totalStepsCount = 0
+                    for chapDict in chaptersArray {
+                        let steps = chapDict["steps"] as? [[String: Any]] ?? []
+                        totalStepsCount += max(1, steps.count)
+                    }
+                    totalStepsCount = max(1, totalStepsCount)
+                    
+                    var stepCounter = 0
+                    var chapters: [ExamChapter] = []
+                    
+                    for (cIdx, chapDict) in chaptersArray.enumerated() {
+                        let chapTitle = chapDict["title"] as? String ?? "Capítulo"
+                        var steps: [ExamStep] = []
+                        let stepsArray = chapDict["steps"] as? [[String: Any]] ?? []
+                        
+                        for stepDict in stepsArray {
+                            stepCounter += 1
+                            let stepTitle = stepDict["title"] as? String ?? "Paso de estudio"
+                            let mins = stepDict["estimatedMinutes"] as? Int ?? 40
+                            let offset = min(daysUntilExam, max(1, Int(round(Double(stepCounter) / Double(totalStepsCount) * Double(daysUntilExam)))))
+                            let targetDate = calendar.date(byAdding: .day, value: offset, to: startOfToday)
+                            
+                            steps.append(ExamStep(title: stepTitle, isCompleted: false, targetDate: targetDate, estimatedMinutes: mins))
+                        }
+                        
+                        if steps.isEmpty {
+                            stepCounter += 1
+                            let offset = min(daysUntilExam, max(1, Int(round(Double(stepCounter) / Double(totalStepsCount) * Double(daysUntilExam)))))
+                            steps.append(ExamStep(title: "Repaso de \(chapTitle)", isCompleted: false, targetDate: calendar.date(byAdding: .day, value: offset, to: startOfToday), estimatedMinutes: 40))
+                        }
+                        
+                        let recOffset = min(daysUntilExam, max(1, Int(round(Double(cIdx + 1) / Double(max(1, chaptersArray.count)) * Double(daysUntilExam)))))
+                        let recDate = calendar.date(byAdding: .day, value: recOffset, to: startOfToday)
+                        chapters.append(ExamChapter(title: chapTitle, recommendedDate: recDate, steps: steps))
+                    }
+                    
+                    return ExamPlan(
+                        title: title,
+                        subject: subject,
+                        examDate: examDate,
+                        difficulty: difficulty,
+                        chapters: chapters
+                    )
+                }
+            }
+        } catch {
+            Self.logger.error("Gemini plan generation error: \(error.localizedDescription)")
+            return nil
+        }
+        return nil
+    }
+    
+    // MARK: - Generate Mock Exam Quiz
+    public func generateMockQuiz(for plan: ExamPlan) async -> [QuizQuestion] {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.count > 10 {
+            let prompt = """
+            Genera un cuestionario de 3 preguntas tipo test para evaluar el siguiente examen:
+            - Asignatura: "\(plan.subject)"
+            - Título: "\(plan.title)"
+            - Dificultad: "\(plan.difficulty.rawValue)"
+
+            Responde estrictamente en formato JSON con esta estructura:
+            [
+              {
+                "question": "Texto de la pregunta",
+                "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
+                "correctIndex": 0,
+                "explanation": "Argumentación pedagógica detallada de por qué esta opción es la correcta."
+              }
+            ]
+            """
+            
+            if let questions = await callGeminiForQuiz(prompt: prompt, key: key) {
+                return questions
+            }
+        }
+        
+        // Local Quiz Fallback
+        return [
+            QuizQuestion(
+                question: "¿Cuál es el método más efectivo según la curva del olvido de Ebbinghaus para dominar \(plan.title)?",
+                options: [
+                  "Repetición espaciada con autoevaluación activa y resolución de problemas",
+                  "Lectura pasiva una única vez sin comprobar la retención",
+                  "Memorización forzada la noche antes del examen",
+                  "Descartar los conceptos teóricos y confiar en el azar"
+                ],
+                correctIndex: 0,
+                explanation: "La repetición espaciada reactiva las conexiones neuronales antes de que el recuerdo se degrade, optimizando la memoria a largo plazo."
+            ),
+            QuizQuestion(
+                question: "Al enfrentarse a un caso práctico de \(plan.subject), ¿cuál es el primer paso recomendado?",
+                options: [
+                  "Anotar la solución inmediatamente sin leer el problema",
+                  "Desglosar el enunciado, identificar variables y estructurar el enfoque",
+                  "Copiar fórmulas sin justificar su aplicabilidad",
+                  "Pasar a la siguiente pregunta sin intentarlo"
+                ],
+                correctIndex: 1,
+                explanation: "El análisis sistemático del enunciado previene sesgos cognitivos y garantiza un planteamiento riguroso."
+            ),
+            QuizQuestion(
+                question: "¿Qué papel juega el análisis de errores en los simulacros de \(plan.title)?",
+                options: [
+                  "Ninguno, solo importa contabilizar la nota final",
+                  "Permite la metacognición para convertir lagunas en aprendizaje profundo",
+                  "Indica que no vale la pena seguir repasando",
+                  "Demuestra que el temario estaba mal diseñado"
+                ],
+                correctIndex: 1,
+                explanation: "Aprender de los fallos reestructura los modelos mentales y consolida el dominio definitivo de la materia."
+            )
+        ]
+    }
+    
+    private func callGeminiForQuiz(prompt: String, key: String) async -> [QuizQuestion]? {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") else {
+            Self.logger.error("Invalid Gemini API URL endpoint for quiz")
+            return nil
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        
+        let payload = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiContentPart(text: prompt)])],
+            generationConfig: GeminiGenerationConfig(responseMimeType: "application/json")
+        )
+        
+        do {
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200 else {
+                Self.logger.warning("Gemini quiz generation HTTP error")
+                return nil
+            }
+            
+            let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            if let text = decoded.candidates?.first?.content?.parts?.first?.text {
+                var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let match = text.range(of: #"\[[\s\S]*\]"#, options: .regularExpression) {
+                    cleaned = String(text[match])
+                }
+                if let quizData = cleaned.data(using: .utf8) {
+                    return try? JSONDecoder().decode([QuizQuestion].self, from: quizData)
+                }
+            }
+        } catch {
+            Self.logger.error("Gemini quiz generation error: \(error.localizedDescription)")
+            return nil
+        }
+        return nil
+    }
+    
+    // MARK: - Direct Chat with Aethelgard Study AI
+    public func chatWithAethelgard(
+        message: String,
+        context: String
+    ) async -> String {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.count > 10 {
+            let prompt = """
+            Eres Aethelgard Study AI, el tutor pedagógico inteligente e interactivo de StudyFlow.
+            Tu misión es acompañar al estudiante en su preparación de exámenes, resolución de dudas académicas, organización de su calendario y optimización de su técnica de estudio (Pomodoro, Repetición Espaciada y Feynman).
+            
+            Contexto actual del estudiante en la app:
+            \(context)
+            
+            Pregunta o mensaje del estudiante:
+            "\(message)"
+            
+            Directrices de respuesta:
+            1. Tono motivador, riguroso, empático y estructurado.
+            2. CONCISIÓN Y FORMATO MÓVIL (CRÍTICO): Escribe SIEMPRE respuestas cortas y directas al grano, adaptadas a pantallas de móvil. Si una duda puede resolverse en 2 o 3 frases o con una lista con viñetas muy breve, hazlo así. No uses párrafos largos innecesarios.
+            3. Evita explicaciones vacías. Si explicas un concepto, usa analogías claras y pasos concretos.
+            4. Si el estudiante tiene un examen próximo, anímale e indícale su próximo paso en el calendario.
+            
+            CAPACIDAD DE CONFIGURAR EXÁMENES Y CREAR PLANES EN EL CALENDARIO:
+            - Si el usuario te pide crear un plan de estudio, programar o añadir un examen en su calendario (por ejemplo: "tengo examen de...", "crea un plan para...", "añade el examen de..."):
+              1. Explícale brevemente en texto cómo has estructurado las fases pedagógicas de repaso (Asimilación, Práctica Feynman y Simulacro).
+              2. AL FINAL de tu respuesta, INCLUYE OBLIGATORIAMENTE un bloque de acción JSON con este formato exacto:
+            ```json:action
+            {
+              "action": "create_exam_plan",
+              "subject": "Nombre de la Asignatura",
+              "title": "Título descriptivo del examen",
+              "examDate": "YYYY-MM-DD",
+              "difficulty": "easy" | "medium" | "hard",
+              "chapters": [
+                {
+                  "title": "Fase 1: Asimilación Conceptual",
+                  "steps": [
+                    { "title": "Subtema o lectura", "estimatedMinutes": 40 }
+                  ]
+                },
+                {
+                  "title": "Fase 2: Consolidación & Práctica Feynman",
+                  "steps": [
+                    { "title": "Resolución de ejercicios tipo", "estimatedMinutes": 45 }
+                  ]
+                },
+                {
+                  "title": "Fase 3: Simulacro y Cierre Cronometrado",
+                  "steps": [
+                    { "title": "Simulacro completo bajo reloj", "estimatedMinutes": 60 }
+                  ]
+                }
+              ]
+            }
+            ```
+            StudyFlow detectará este bloque automáticamente, programará los días en el Calendario y creará el plan interactivo.
+            """
+            
+            if let answer = await callGeminiForChat(prompt: prompt, key: key) {
+                return answer
+            }
+        }
+        
+        // Intelligent Offline Pedagogical Fallback
+        return generateOfflineChatResponse(message: message, context: context)
+    }
+    
+    private func callGeminiForChat(prompt: String, key: String) async -> String? {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") else {
+            Self.logger.error("Invalid Gemini API URL endpoint for chat")
+            return nil
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        
+        let payload = GeminiRequest(
+            contents: [GeminiContent(parts: [GeminiContentPart(text: prompt)])],
+            generationConfig: nil
+        )
+        
+        do {
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200 else {
+                Self.logger.warning("Gemini chat HTTP error")
+                return nil
+            }
+            
+            let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            if let text = decoded.candidates?.first?.content?.parts?.first?.text {
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        } catch {
+            Self.logger.error("Gemini chat generation error: \(error.localizedDescription)")
+            return nil
+        }
+        return nil
+    }
+    
+    // MARK: - Local Spaced Repetition Plan Generator
+    private func generateLocalPlan(
+        subject: String,
+        title: String,
+        examDate: Date,
+        difficulty: ExamDifficulty,
+        notes: String
+    ) -> ExamPlan {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let startOfExam = calendar.startOfDay(for: examDate)
+        let daysUntilExam = max(1, calendar.dateComponents([.day], from: startOfToday, to: startOfExam).day ?? 7)
+        
+        let lines = notes.components(separatedBy: .newlines).filter { $0.trimmingCharacters(in: .whitespaces).count > 3 }
+        let topic1 = lines.indices.contains(0) ? lines[0] : "Fundamentos y Conceptos Clave"
+        let topic2 = lines.indices.contains(1) ? lines[1] : "Aplicación Práctica y Esquemas"
+        let topic3 = lines.indices.contains(2) ? lines[2] : "Resolución de Modelos y Exámenes Anteriores"
+        
+        let d1 = calendar.date(byAdding: .day, value: max(1, daysUntilExam / 4), to: startOfToday)
+        let d2 = calendar.date(byAdding: .day, value: max(2, (daysUntilExam * 2) / 4), to: startOfToday)
+        let d3 = calendar.date(byAdding: .day, value: max(3, (daysUntilExam * 3) / 4), to: startOfToday)
+        let dExam = examDate
+        
+        let chap1 = ExamChapter(title: "Fase 1: Asimilación Teórica (Spaced Repetition)", recommendedDate: d1, steps: [
+            ExamStep(title: "\(topic1) — Lectura activa y subrayado", isCompleted: false, targetDate: d1, estimatedMinutes: 35),
+            ExamStep(title: "\(topic2) — Fichas de repaso y mapas mentales", isCompleted: false, targetDate: d2, estimatedMinutes: 40)
+        ])
+        
+        let chap2 = ExamChapter(title: "Fase 2: Consolidación y Práctica Activa", recommendedDate: d2, steps: [
+            ExamStep(title: "\(topic3) — Ejercicios resueltos paso a paso", isCompleted: false, targetDate: d3, estimatedMinutes: 45),
+            ExamStep(title: "Técnica Feynman: Explicación conceptual sin notas", isCompleted: false, targetDate: d3, estimatedMinutes: 40)
+        ])
+        
+        let chap3 = ExamChapter(title: "Fase 3: Simulacro y Cierre Cronometrado", recommendedDate: dExam, steps: [
+            ExamStep(title: "Simulacro completo bajo condiciones reales de examen", isCompleted: false, targetDate: dExam, estimatedMinutes: 60),
+            ExamStep(title: "Revisión final de dudas y puntos débiles", isCompleted: false, targetDate: dExam, estimatedMinutes: 30)
+        ])
+        
+        return ExamPlan(
+            title: title,
+            subject: subject,
+            examDate: examDate,
+            difficulty: difficulty,
+            chapters: [chap1, chap2, chap3]
+        )
+    }
+    
+    private func generateOfflineChatResponse(message: String, context: String) -> String {
+        let lower = message.lowercased()
+        
+        // Check if user is asking to plan an exam / create a plan
+        if lower.contains("examen") && (lower.contains("plan") || lower.contains("añade") || lower.contains("prepara") || lower.contains("calendario")) {
+            let targetDateStr: String
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let future = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+            targetDateStr = formatter.string(from: future)
+            
+            var guessedSubject = "Historia"
+            if lower.contains("mate") || lower.contains("cálculo") || lower.contains("álgebra") {
+                guessedSubject = "Matemáticas"
+            } else if lower.contains("bio") || lower.contains("ciencias") {
+                guessedSubject = "Biología"
+            } else if lower.contains("física") {
+                guessedSubject = "Física"
+            } else if lower.contains("química") {
+                guessedSubject = "Química"
+            } else if lower.contains("filo") {
+                guessedSubject = "Filosofía"
+            } else if lower.contains("inglés") {
+                guessedSubject = "Inglés"
+            }
+            
+            return """
+            He preparado tu plan de preparación pedagógica estructurado en 3 fases de consolidación activa: Asimilación Conceptual, Práctica Feynman y Simulacro Cronometrado.
+            
+            ```json:action
+            {
+              "action": "create_exam_plan",
+              "subject": "\(guessedSubject)",
+              "title": "Examen de \(guessedSubject)",
+              "examDate": "\(targetDateStr)",
+              "difficulty": "medium",
+              "chapters": [
+                {
+                  "title": "Fase 1: Asimilación Conceptual",
+                  "steps": [
+                    { "title": "Lectura activa del temario y mapa conceptual", "estimatedMinutes": 40 },
+                    { "title": "Fichas de memoria de definiciones clave", "estimatedMinutes": 30 }
+                  ]
+                },
+                {
+                  "title": "Fase 2: Consolidación & Práctica Feynman",
+                  "steps": [
+                    { "title": "Resolución de ejercicios tipo y casos prácticos", "estimatedMinutes": 45 },
+                    { "title": "Explicación socrática de conceptos sin notas", "estimatedMinutes": 40 }
+                  ]
+                },
+                {
+                  "title": "Fase 3: Simulacro y Cierre Cronometrado",
+                  "steps": [
+                    { "title": "Simulacro completo bajo reloj", "estimatedMinutes": 60 }
+                  ]
+                }
+              ]
+            }
+            ```
+            """
+        }
+        
+        if lower.contains("organizo") || lower.contains("hoy") || lower.contains("sesion") || lower.contains("sesión") {
+            return """
+            Vamos a planificar tu jornada con máxima eficiencia cognitiva:
+
+            1. **Bloque 1 (25 min - Pomodoro):** Elige el tema más desafiante de tu temario. Sin distracciones.
+            2. **Descanso Activo (5 min):** Hidrátate y estira la espalda, sin pantallas.
+            3. **Bloque 2 (25 min):** Resolución activa de problemas o autoevaluación (Active Recall).
+            4. **Cierre de Racha:** Al terminar, registra tu sesión para sumar +50 XP y mantener protegida tu racha.
+            """
+        } else if lower.contains("feynman") || lower.contains("dificil") || lower.contains("difícil") || lower.contains("concepto") {
+            return """
+            La **Técnica Feynman** es el método para dominar cualquier concepto complejo:
+
+            1. **Elige el concepto:** Escribe el título en una hoja en blanco.
+            2. **Explícalo como a un niño de 10 años:** Usa vocabulario sencillo y analogías cotidianas.
+            3. **Identifica tus bloqueos:** Cuando te trabes, vuelve a tus notas solo para aclarar ese punto exacto.
+            4. **Simplifica y conecta:** Reescribe la explicación hasta que fluya con naturalidad.
+            """
+        } else if lower.contains("olvido") || lower.contains("ebbinghaus") || lower.contains("memoria") || lower.contains("repaso") {
+            return """
+            La **Curva del Olvido de Ebbinghaus** demuestra que olvidamos hasta el 70% de lo estudiado en las primeras 48 horas si no hay reactivación:
+
+            - **Repaso 1:** A las 24 horas (5-10 minutos de recapitulación rápida).
+            - **Repaso 2:** Al 3er día (resolver 3 ejercicios prácticos).
+            - **Repaso 3:** Al 7º día (simulacro o flashcards).
+            - **Repaso 4:** A los 14-21 días (consolidación permanente en la memoria a largo plazo).
+            """
+        }
+        
+        return """
+        Como tu tutor Aethelgard, te recomiendo abordar este reto desglosándolo en tres fases:
+
+        1. **Diagnóstico:** Identifica qué aspecto concreto te genera más fricción.
+        2. **Aplicación:** Resuelve un ejemplo práctico inmediatamente usando la técnica de Estudio Activo.
+        3. **Validación:** Comprueba tu respuesta o utiliza nuestro generador de Simulacros para medir tu dominio.
+
+        ¿Quieres que preparemos un plan de estudio en tu calendario o prefieres configurar una sesión Pomodoro ahora?
+        """
+    }
+}
