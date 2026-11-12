@@ -158,15 +158,15 @@ public struct AethelgardChatView: View {
                         .padding(.top, 14)
                         .padding(.bottom, 10)
                     }
-                    .onChange(of: messages.count) {
+                    .onChange(of: messages.count) { _ in
                         withAnimation {
                             if let last = messages.last {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
-                    .onChange(of: isThinking) {
-                        if isThinking {
+                    .onChange(of: isThinking) { thinking in
+                        if thinking {
                             withAnimation {
                                 proxy.scrollTo("thinking_indicator", anchor: .bottom)
                             }

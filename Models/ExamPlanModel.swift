@@ -300,6 +300,7 @@ public class ExamPlanManager: ObservableObject {
         return newPlan
     }
     
+    @discardableResult
     public func toggleStep(planID: UUID, chapterID: UUID, stepID: UUID) -> Bool? {
         guard let pIndex = plans.firstIndex(where: { $0.id == planID }) else { return nil }
         guard let cIndex = plans[pIndex].chapters.firstIndex(where: { $0.id == chapterID }) else { return nil }
