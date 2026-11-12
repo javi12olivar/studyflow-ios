@@ -1,4 +1,5 @@
 ﻿import SwiftUI
+import UIKit
 
 public struct AIPlanCreationSheet: View {
     @ObservedObject var planManager: ExamPlanManager
@@ -84,7 +85,7 @@ public struct AIPlanCreationSheet: View {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Ocultar") {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        KeyboardHelper.hide()
                     }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.orange)

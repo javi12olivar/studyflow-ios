@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - API Configuration Sheet
 public struct ApiConfigurationSheet: View {
@@ -190,7 +191,7 @@ public struct ApiConfigurationSheet: View {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Ocultar Teclado") {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        KeyboardHelper.hide()
                     }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.orange)

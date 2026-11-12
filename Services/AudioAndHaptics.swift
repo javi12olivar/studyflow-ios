@@ -89,3 +89,18 @@ public final class AudioManager: ObservableObject {
 }
 
 public typealias SoundEffectManager = AudioManager
+
+// MARK: - Keyboard Dismissal Helper
+public enum KeyboardHelper {
+    public static func hide() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+import SwiftUI
+
+extension View {
+    public func hideKeyboard() {
+        KeyboardHelper.hide()
+    }
+}
