@@ -24,28 +24,28 @@ public struct StreakDay: Identifiable, Codable, Sendable {
 @MainActor
 public class StreakManager: ObservableObject {
     @Published public var currentStreak: Int {
-        didSet { UserDefaults.standard.set(currentStreak, forKey: "sf_currentStreak") }
+        didSet { UserDefaults.standard.set(currentStreak, forKey: "sf_currentStreak"); UserDefaults.standard.synchronize() }
     }
     @Published public var longestStreak: Int {
-        didSet { UserDefaults.standard.set(longestStreak, forKey: "sf_longestStreak") }
+        didSet { UserDefaults.standard.set(longestStreak, forKey: "sf_longestStreak"); UserDefaults.standard.synchronize() }
     }
     @Published public var freezeCount: Int {
-        didSet { UserDefaults.standard.set(freezeCount, forKey: "sf_freezeCount") }
+        didSet { UserDefaults.standard.set(freezeCount, forKey: "sf_freezeCount"); UserDefaults.standard.synchronize() }
     }
     @Published public var isFrozen: Bool {
-        didSet { UserDefaults.standard.set(isFrozen, forKey: "sf_isFrozen") }
+        didSet { UserDefaults.standard.set(isFrozen, forKey: "sf_isFrozen"); UserDefaults.standard.synchronize() }
     }
     @Published public var lastStudyDate: Date? {
-        didSet { UserDefaults.standard.set(lastStudyDate, forKey: "sf_lastStudyDate") }
+        didSet { UserDefaults.standard.set(lastStudyDate, forKey: "sf_lastStudyDate"); UserDefaults.standard.synchronize() }
     }
     @Published public var totalXP: Int {
-        didSet { UserDefaults.standard.set(totalXP, forKey: "sf_totalXP") }
+        didSet { UserDefaults.standard.set(totalXP, forKey: "sf_totalXP"); UserDefaults.standard.synchronize() }
     }
     @Published public var userLevel: Int {
-        didSet { UserDefaults.standard.set(userLevel, forKey: "sf_userLevel") }
+        didSet { UserDefaults.standard.set(userLevel, forKey: "sf_userLevel"); UserDefaults.standard.synchronize() }
     }
     @Published public var completedDates: [String] {
-        didSet { UserDefaults.standard.set(completedDates, forKey: "sf_completed_dates") }
+        didSet { UserDefaults.standard.set(completedDates, forKey: "sf_completed_dates"); UserDefaults.standard.synchronize() }
     }
     
     // Milestones discovered from Knowunity REA: 3, 7, 10, 20, 30, 40, 50, 100

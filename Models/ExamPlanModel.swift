@@ -178,6 +178,7 @@ public class ExamPlanManager: ObservableObject {
     private func savePlans() {
         if let encoded = try? JSONEncoder().encode(plans) {
             UserDefaults.standard.set(encoded, forKey: storageKey)
+            UserDefaults.standard.synchronize()
         }
     }
     

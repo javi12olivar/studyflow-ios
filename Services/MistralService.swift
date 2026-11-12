@@ -13,8 +13,10 @@ public final class MistralService: ObservableObject {
     public let model: String = "mistral-large-latest" // Flagship 123B parameter model
     
     private init() {
-        if let data = KeychainHelper.load(key: keychainKey),
-           let saved = String(data: data, encoding: .utf8) {
+        if let saved = UserDefaults.standard.string(forKey: keychainKey), !saved.isEmpty {
+            self.apiKey = saved
+        } else if let data = KeychainHelper.load(key: keychainKey),
+                  let saved = String(data: data, encoding: .utf8), !saved.isEmpty {
             self.apiKey = saved
         }
     }
@@ -22,6 +24,8 @@ public final class MistralService: ObservableObject {
     public func saveApiKey(_ key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         self.apiKey = trimmed
+        UserDefaults.standard.set(trimmed, forKey: keychainKey)
+        UserDefaults.standard.synchronize()
         if let data = trimmed.data(using: .utf8) {
             _ = KeychainHelper.save(key: keychainKey, data: data)
         }

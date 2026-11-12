@@ -33,7 +33,6 @@ public struct ChatSession: Identifiable, Codable, Equatable {
 }
 
 // MARK: - Aethelgard Chat View
-@MainActor
 public struct AethelgardChatView: View {
     @ObservedObject var streakManager: StreakManager
     @ObservedObject var planManager: ExamPlanManager
@@ -173,6 +172,11 @@ public struct AethelgardChatView: View {
                         .padding(.top, 14)
                         .padding(.bottom, 10)
                     }
+                    .scrollDismissesKeyboard(.interactively)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
                     .onChange(of: messages.count) { _ in
                         withAnimation {
                             if let last = messages.last {
@@ -299,6 +303,15 @@ public struct AethelgardChatView: View {
                         }
                     }
                 }
+                
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Ocultar") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.orange)
+                }
             }
             .sheet(isPresented: $showingApiSettings) {
                 ApiConfigurationSheet()
@@ -353,6 +366,7 @@ public struct AethelgardChatView: View {
         if let encoded = try? JSONEncoder().encode(sessions) {
             UserDefaults.standard.set(encoded, forKey: "sf_chat_sessions")
             UserDefaults.standard.set(activeSessionId, forKey: "sf_active_session_id")
+            UserDefaults.standard.synchronize()
         }
     }
     

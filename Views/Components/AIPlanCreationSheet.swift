@@ -1,6 +1,5 @@
 ﻿import SwiftUI
 
-@MainActor
 public struct AIPlanCreationSheet: View {
     @ObservedObject var planManager: ExamPlanManager
     @Environment(\.dismiss) private var dismiss
@@ -78,9 +77,19 @@ public struct AIPlanCreationSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Crear Plan con IA")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Ocultar") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.orange)
+                }
+                
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
                 }

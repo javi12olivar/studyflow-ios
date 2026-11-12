@@ -1,7 +1,6 @@
 import SwiftUI
 
 // MARK: - API Configuration Sheet
-@MainActor
 public struct ApiConfigurationSheet: View {
     @Environment(\.dismiss) private var dismiss
     
@@ -184,9 +183,19 @@ public struct ApiConfigurationSheet: View {
                     .listRowBackground(savedSuccess ? Color.green : Color.orange)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Configuración de IA")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Ocultar Teclado") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.orange)
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Listo") {
                         saveKeys()
@@ -202,17 +211,25 @@ public struct ApiConfigurationSheet: View {
         }
     }
     
+    @MainActor
     private func loadKeys() {
         self.groqKey = GroqService.shared.apiKey
         self.geminiKey = GeminiService.shared.apiKey
         self.mistralKey = MistralService.shared.apiKey
     }
     
+    @MainActor
     private func saveKeys() {
         HapticManager.shared.success()
-        GroqService.shared.saveApiKey(groqKey)
-        GeminiService.shared.apiKey = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        MistralService.shared.saveApiKey(mistralKey)
+        let trimmedGroq = groqKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGemini = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMistral = mistralKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        GroqService.shared.saveApiKey(trimmedGroq)
+        GeminiService.shared.apiKey = trimmedGemini
+        MistralService.shared.saveApiKey(trimmedMistral)
+        
+        UserDefaults.standard.synchronize()
         
         withAnimation {
             savedSuccess = true

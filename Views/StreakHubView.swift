@@ -1,6 +1,5 @@
 import SwiftUI
 
-@MainActor
 public struct StreakHubView: View {
     @ObservedObject var streakManager: StreakManager
     @State private var showingUnfreezeSheet = false

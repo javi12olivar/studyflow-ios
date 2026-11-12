@@ -124,25 +124,19 @@ public final class GeminiService: ObservableObject {
     }
     
     private func loadApiKey() -> String {
-        // First check secure Keychain
+        if let saved = UserDefaults.standard.string(forKey: keyStorageAccount), !saved.isEmpty {
+            return saved
+        }
         if let data = KeychainHelper.load(key: keyStorageAccount),
            let key = String(data: data, encoding: .utf8), !key.isEmpty {
             return key
         }
-        
-        // One-time graceful migration from legacy UserDefaults
-        if let legacyKey = UserDefaults.standard.string(forKey: keyStorageAccount), !legacyKey.isEmpty {
-            if let data = legacyKey.data(using: .utf8) {
-                _ = KeychainHelper.save(key: keyStorageAccount, data: data)
-            }
-            UserDefaults.standard.removeObject(forKey: keyStorageAccount)
-            return legacyKey
-        }
-        
         return ""
     }
     
     private func persistApiKey(_ key: String) {
+        UserDefaults.standard.set(key, forKey: keyStorageAccount)
+        UserDefaults.standard.synchronize()
         if key.isEmpty {
             KeychainHelper.delete(key: keyStorageAccount)
         } else if let data = key.data(using: .utf8) {
