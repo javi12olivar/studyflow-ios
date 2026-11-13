@@ -157,23 +157,77 @@ public final class GeminiService: ObservableObject {
         dateFormatter.formatOptions = [.withFullDate]
         let dateStr = dateFormatter.string(from: examDate)
         
+        // 1. Try Groq Cloud 120B first if configured
+        if GroqService.shared.apiKey.count > 5 {
+            let groqMsg = """
+            Genera un plan de estudio estructurado día a día para el siguiente examen:
+            - Asignatura: "\(subject)"
+            - Título: "\(title)"
+            - Fecha del Examen: "\(dateStr)"
+            - Dificultad: "\(difficulty.rawValue)"
+            - Notas/Temario: "\(notes)"
+            
+            OBLIGATORIO: Organiza los capítulos día a día ("Día 1: ...", "Día 2: ...") con 2 a 3 pasos por día.
+            Incluye al final el bloque ```json:action con "action": "create_exam_plan" y la lista de chapters.
+            """
+            if let resp = await GroqService.shared.chat(message: groqMsg, context: "") {
+                let pattern = #"(?s)```(?:json:action|json)?\s*(\{.*?"action"\s*:\s*"create_exam_plan".*?\})\s*```"#
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                    let ns = resp as NSString
+                    let matches = regex.matches(in: resp, options: [], range: NSRange(location: 0, length: ns.length))
+                    if let match = matches.first, match.numberOfRanges > 1 {
+                        let jsonStr = ns.substring(with: match.range(at: 1))
+                        if let data = jsonStr.data(using: .utf8),
+                           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let rawChapters = dict["chapters"] as? [[String: Any]] {
+                            let calendar = Calendar.current
+                            let startOfToday = calendar.startOfDay(for: Date())
+                            var chapters: [ExamChapter] = []
+                            for (cIdx, chapDict) in rawChapters.enumerated() {
+                                let cTitle = chapDict["title"] as? String ?? "Día \(cIdx + 1): Preparación"
+                                var steps: [ExamStep] = []
+                                if let rawSteps = chapDict["steps"] as? [[String: Any]] {
+                                    for st in rawSteps {
+                                        let sTitle = st["title"] as? String ?? "Sesión de estudio"
+                                        let mins = st["estimatedMinutes"] as? Int ?? 30
+                                        steps.append(ExamStep(title: sTitle, estimatedMinutes: mins))
+                                    }
+                                }
+                                if steps.isEmpty {
+                                    steps = [ExamStep(title: "Repaso conceptual"), ExamStep(title: "Ejercicios prácticos")]
+                                }
+                                let rDate = calendar.date(byAdding: .day, value: cIdx, to: startOfToday)
+                                chapters.append(ExamChapter(title: cTitle, recommendedDate: rDate, steps: steps))
+                            }
+                            return ExamPlan(title: title, subject: subject, examDate: examDate, difficulty: difficulty, chapters: chapters)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 2. Try Gemini Flash-Lite if key available
         if key.count > 10 {
             let prompt = """
             Eres Aethelgard Study AI, tutor pedagógico inteligente en StudyFlow.
-            Genera un plan de estudio estructurado con Spaced Repetition para el siguiente examen:
+            Genera una planificación de estudio organizada DÍA A DÍA con Spaced Repetition para el siguiente examen:
             - Asignatura: "\(subject)"
             - Título: "\(title)"
             - Fecha del Examen: "\(dateStr)"
             - Dificultad: "\(difficulty.rawValue)"
             - Notas/Temario: "\(notes)"
 
+            ORGANIZACIÓN DÍA A DÍA:
+            Organiza el plan día por día hasta el examen. Los capítulos deben titularse obligatoriamente "Día 1: ...", "Día 2: ...", etc., asignando a cada día pasos concretos de asimilación, práctica o simulacro.
+
             Responde OBLIGATORIAMENTE en JSON puro válido conforme a este esquema:
             {
               "chapters": [
                 {
-                  "title": "Nombre del Capítulo",
+                  "title": "Día 1: Asimilación y Conceptos Clave",
                   "steps": [
-                    { "title": "Nombre del paso de estudio", "estimatedMinutes": 40 }
+                    { "title": "Lectura y conceptos iniciales", "estimatedMinutes": 40 },
+                    { "title": "Esquema y fórmulas esenciales", "estimatedMinutes": 30 }
                   ]
                 }
               ]
@@ -197,7 +251,7 @@ public final class GeminiService: ObservableObject {
         examDate: Date,
         difficulty: ExamDifficulty
     ) async -> ExamPlan? {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent") else {
             Self.logger.error("Invalid Gemini API URL endpoint")
             return nil
         }
@@ -358,7 +412,7 @@ public final class GeminiService: ObservableObject {
     }
     
     private func callGeminiForQuiz(prompt: String, key: String) async -> [QuizQuestion]? {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent") else {
             Self.logger.error("Invalid Gemini API URL endpoint for quiz")
             return nil
         }
@@ -467,7 +521,7 @@ public final class GeminiService: ObservableObject {
     }
     
     private func callGeminiForChat(prompt: String, key: String) async -> String? {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent") else {
             Self.logger.error("Invalid Gemini API URL endpoint for chat")
             return nil
         }
@@ -501,7 +555,7 @@ public final class GeminiService: ObservableObject {
         return nil
     }
     
-    // MARK: - Local Spaced Repetition Plan Generator
+    // MARK: - Local Spaced Repetition Plan Generator (Day-by-Day)
     private func generateLocalPlan(
         subject: String,
         title: String,
@@ -516,35 +570,52 @@ public final class GeminiService: ObservableObject {
         
         let lines = notes.components(separatedBy: .newlines).filter { $0.trimmingCharacters(in: .whitespaces).count > 3 }
         let topic1 = lines.indices.contains(0) ? lines[0] : "Fundamentos y Conceptos Clave"
-        let topic2 = lines.indices.contains(1) ? lines[1] : "Aplicación Práctica y Esquemas"
-        let topic3 = lines.indices.contains(2) ? lines[2] : "Resolución de Modelos y Exámenes Anteriores"
+        let topic2 = lines.indices.contains(1) ? lines[1] : "Aplicación Práctica y Ejercicios"
+        let topic3 = lines.indices.contains(2) ? lines[2] : "Resolución de Dudas y Modelos de Examen"
         
-        let d1 = calendar.date(byAdding: .day, value: max(1, daysUntilExam / 4), to: startOfToday)
-        let d2 = calendar.date(byAdding: .day, value: max(2, (daysUntilExam * 2) / 4), to: startOfToday)
-        let d3 = calendar.date(byAdding: .day, value: max(3, (daysUntilExam * 3) / 4), to: startOfToday)
-        let dExam = examDate
+        var chapters: [ExamChapter] = []
+        let numDays = min(max(3, daysUntilExam), 7)
         
-        let chap1 = ExamChapter(title: "Fase 1: Asimilación Teórica (Spaced Repetition)", recommendedDate: d1, steps: [
-            ExamStep(title: "\(topic1) — Lectura activa y subrayado", isCompleted: false, targetDate: d1, estimatedMinutes: 35),
-            ExamStep(title: "\(topic2) — Fichas de repaso y mapas mentales", isCompleted: false, targetDate: d2, estimatedMinutes: 40)
-        ])
-        
-        let chap2 = ExamChapter(title: "Fase 2: Consolidación y Práctica Activa", recommendedDate: d2, steps: [
-            ExamStep(title: "\(topic3) — Ejercicios resueltos paso a paso", isCompleted: false, targetDate: d3, estimatedMinutes: 45),
-            ExamStep(title: "Técnica Feynman: Explicación conceptual sin notas", isCompleted: false, targetDate: d3, estimatedMinutes: 40)
-        ])
-        
-        let chap3 = ExamChapter(title: "Fase 3: Simulacro y Cierre Cronometrado", recommendedDate: dExam, steps: [
-            ExamStep(title: "Simulacro completo bajo condiciones reales de examen", isCompleted: false, targetDate: dExam, estimatedMinutes: 60),
-            ExamStep(title: "Revisión final de dudas y puntos débiles", isCompleted: false, targetDate: dExam, estimatedMinutes: 30)
-        ])
+        for dayIdx in 1...numDays {
+            let dayDate = calendar.date(byAdding: .day, value: dayIdx - 1, to: startOfToday) ?? startOfToday
+            let dayTitle: String
+            let steps: [ExamStep]
+            
+            if dayIdx == 1 {
+                dayTitle = "Día 1: Asimilación y Conceptos Clave (\(topic1))"
+                steps = [
+                    ExamStep(title: "\(topic1) — Lectura comprensiva y subrayado activo", isCompleted: false, targetDate: dayDate, estimatedMinutes: 35),
+                    ExamStep(title: "Elaboración de esquemas conceptuales y fórmulas", isCompleted: false, targetDate: dayDate, estimatedMinutes: 25)
+                ]
+            } else if dayIdx == numDays {
+                dayTitle = "Día \(dayIdx): Simulacro Final y Cierre Cronometrado"
+                steps = [
+                    ExamStep(title: "Simulacro completo bajo reloj (condiciones reales)", isCompleted: false, targetDate: dayDate, estimatedMinutes: 60),
+                    ExamStep(title: "Repaso relámpago con Spaced Repetition", isCompleted: false, targetDate: dayDate, estimatedMinutes: 20)
+                ]
+            } else if dayIdx == numDays - 1 {
+                dayTitle = "Día \(dayIdx): Técnica Feynman y Repaso Activo"
+                steps = [
+                    ExamStep(title: "Explicar conceptos en voz alta sin mirar notas (Feynman)", isCompleted: false, targetDate: dayDate, estimatedMinutes: 40),
+                    ExamStep(title: "Resolución de dudas críticas del temario", isCompleted: false, targetDate: dayDate, estimatedMinutes: 30)
+                ]
+            } else {
+                let topic = lines.indices.contains(dayIdx - 1) ? lines[dayIdx - 1] : (dayIdx % 2 == 0 ? topic2 : topic3)
+                dayTitle = "Día \(dayIdx): Práctica Intensiva y Ejercicios (\(topic))"
+                steps = [
+                    ExamStep(title: "\(topic) — Resolución de ejercicios tipo", isCompleted: false, targetDate: dayDate, estimatedMinutes: 45),
+                    ExamStep(title: "Identificación y corrección de errores típicos", isCompleted: false, targetDate: dayDate, estimatedMinutes: 20)
+                ]
+            }
+            chapters.append(ExamChapter(title: dayTitle, recommendedDate: dayDate, steps: steps))
+        }
         
         return ExamPlan(
             title: title,
             subject: subject,
             examDate: examDate,
             difficulty: difficulty,
-            chapters: [chap1, chap2, chap3]
+            chapters: chapters
         )
     }
     

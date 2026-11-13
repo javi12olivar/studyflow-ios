@@ -12,6 +12,7 @@ public struct AIPlanCreationSheet: View {
     @State private var notes: String = ""
     @State private var isGenerating: Bool = false
     @State private var showingApiSettings: Bool = false
+    @State private var generationTask: Task<Void, Never>? = nil
     
     public init(planManager: ExamPlanManager) {
         self.planManager = planManager
@@ -43,11 +44,11 @@ public struct AIPlanCreationSheet: View {
                             if isGenerating {
                                 ProgressView()
                                     .padding(.trailing, 8)
-                                Text("Gemini Flash Planificando...")
+                                Text(GroqService.shared.apiKey.count > 5 ? "Groq 120B Planificando..." : "IA Planificando día a día...")
                                     .fontWeight(.bold)
                             } else {
                                 Image(systemName: "sparkles")
-                                Text("Generar Plan con Spaced Repetition")
+                                Text("Generar Plan Diario con IA")
                                     .fontWeight(.bold)
                             }
                             Spacer()
@@ -58,13 +59,13 @@ public struct AIPlanCreationSheet: View {
                     .disabled(subject.trimmingCharacters(in: .whitespaces).isEmpty || isGenerating)
                 }
                 
-                if GeminiService.shared.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if GroqService.shared.apiKey.count <= 5 && GeminiService.shared.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Section {
                         Button(action: { showingApiSettings = true }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "key.fill")
                                     .foregroundColor(.orange)
-                                Text("Configurar API Key de Gemini")
+                                Text("Configurar API Keys (Groq / Gemini)")
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(.primary)
                                 Spacer()
@@ -74,7 +75,7 @@ public struct AIPlanCreationSheet: View {
                             }
                         }
                     } footer: {
-                        Text("Introduce tu clave gratuita de Google Gemini para habilitar el desglose inteligente.")
+                        Text("Introduce tu API Key de Groq o Gemini para crear desgloses de temario automáticos día por día.")
                     }
                 }
             }
@@ -82,18 +83,15 @@ public struct AIPlanCreationSheet: View {
             .navigationTitle("Crear Plan con IA")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Ocultar") {
-                        KeyboardHelper.hide()
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.orange)
-                }
-                
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") { dismiss() }
+                    Button("Cancelar") {
+                        generationTask?.cancel()
+                        dismiss()
+                    }
                 }
+            }
+            .onDisappear {
+                generationTask?.cancel()
             }
             .sheet(isPresented: $showingApiSettings) {
                 ApiConfigurationSheet()
@@ -105,7 +103,8 @@ public struct AIPlanCreationSheet: View {
         isGenerating = true
         HapticManager.shared.light()
         
-        Task {
+        generationTask?.cancel()
+        generationTask = Task { @MainActor in
             let finalSubject = subject.isEmpty ? "Estudio General" : subject
             let finalTitle = title.isEmpty ? "Examen de \(finalSubject)" : title
             
@@ -117,13 +116,13 @@ public struct AIPlanCreationSheet: View {
                 notes: notes
             )
             
-            await MainActor.run {
-                planManager.addPlan(plan)
-                isGenerating = false
-                HapticManager.shared.success()
-                SoundEffectManager.shared.playCelebration()
-                dismiss()
-            }
+            guard !Task.isCancelled else { return }
+            
+            planManager.addPlan(plan)
+            isGenerating = false
+            HapticManager.shared.success()
+            SoundEffectManager.shared.playCelebration()
+            dismiss()
         }
     }
 }

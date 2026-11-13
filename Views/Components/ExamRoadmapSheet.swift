@@ -20,6 +20,32 @@ public struct ExamRoadmapSheet: View {
         planManager.plans.first(where: { $0.id == plan.id }) ?? plan
     }
     
+    private func dateForChapter(at index: Int) -> Date {
+        if let d = currentPlan.chapters[index].recommendedDate {
+            return d
+        }
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let daysRemaining = max(1, currentPlan.daysRemaining)
+        let totalChapters = max(1, currentPlan.chapters.count)
+        let offset = min(daysRemaining - 1, (index * daysRemaining) / max(1, totalChapters))
+        return calendar.date(byAdding: .day, value: offset, to: startOfToday) ?? Date()
+    }
+    
+    private func dateBadgeForChapter(at index: Int) -> (dayTag: String, dateTag: String) {
+        let date = dateForChapter(at: index)
+        let calendar = Calendar.current
+        let dateStr: String
+        if calendar.isDateInToday(date) {
+            dateStr = "Hoy"
+        } else if calendar.isDateInTomorrow(date) {
+            dateStr = "Mañana"
+        } else {
+            dateStr = date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        }
+        return ("Día \(index + 1)", dateStr)
+    }
+    
     public var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -88,14 +114,14 @@ public struct ExamRoadmapSheet: View {
                     
                     // Roadmap Methodology Callout
                     HStack(spacing: 12) {
-                        Image(systemName: "brain.head.profile")
+                        Image(systemName: "calendar.badge.clock")
                             .font(.system(size: 22))
                             .foregroundColor(.orange)
                         
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Curva del Olvido de Ebbinghaus")
+                            Text("Planificación Diaria hasta el Examen")
                                 .font(.system(size: 14, weight: .bold))
-                            Text("Cada fase está calculada para reactivar la memoria a largo plazo en intervalos estratégicos.")
+                            Text("Temario organizado día a día para que asimiles los conceptos y llegues al examen preparado.")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                         }
@@ -106,30 +132,52 @@ public struct ExamRoadmapSheet: View {
                     
                     // Phases and Chapters
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("Cronograma de Hitos y Fases")
+                        Text("Cronograma Diario de Temario")
                             .font(.system(size: 17, weight: .bold))
                         
                         ForEach(Array(currentPlan.chapters.enumerated()), id: \.element.id) { index, chapter in
                             VStack(alignment: .leading, spacing: 12) {
-                                HStack(spacing: 10) {
+                                let badge = dateBadgeForChapter(at: index)
+                                
+                                HStack(alignment: .center, spacing: 8) {
+                                    HStack(spacing: 5) {
+                                        Text(badge.dayTag)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.orange)
+                                        Text("•")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(.orange.opacity(0.6))
+                                        Text(badge.dateTag)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.orange.opacity(0.12))
+                                    .cornerRadius(8)
+                                    
+                                    Spacer()
+                                    
+                                    let comp = chapter.steps.filter { $0.isCompleted }.count
+                                    Text("\(comp)/\(chapter.steps.count) completados")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                HStack(alignment: .top, spacing: 10) {
                                     ZStack {
                                         Circle()
                                             .fill(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                            .frame(width: 26, height: 26)
+                                            .frame(width: 24, height: 24)
                                         Text("\(index + 1)")
-                                            .font(.system(size: 13, weight: .bold))
+                                            .font(.system(size: 12, weight: .bold))
                                             .foregroundColor(.white)
                                     }
                                     
                                     Text(chapter.title)
                                         .font(.system(size: 15, weight: .bold))
-                                    
-                                    Spacer()
-                                    
-                                    let comp = chapter.steps.filter { $0.isCompleted }.count
-                                    Text("\(comp)/\(chapter.steps.count)")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(.primary)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                                 
                                 VStack(spacing: 8) {

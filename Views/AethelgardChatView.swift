@@ -46,6 +46,7 @@ public struct AethelgardChatView: View {
     @State private var inputText: String = ""
     @State private var isThinking: Bool = false
     @State private var activeTask: Task<Void, Never>? = nil
+    @FocusState private var isInputFocused: Bool
     
     private let defaultWelcome = "¡Hola! Soy **Aethelgard**, tu tutor pedagógico de StudyFlow.\n\nEstoy aquí para guiarte en tu preparación de exámenes, resolver dudas conceptuales, optimizar tus bloques Pomodoro y aplicar la técnica de Repetición Espaciada para que nada se te olvide.\n\n¿En qué asignatura o tema nos enfocamos hoy?"
     
@@ -176,10 +177,10 @@ public struct AethelgardChatView: View {
                     .scrollDismissesKeyboard(.interactively)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        KeyboardHelper.hide()
+                        dismissKeyboardWithBounce()
                     }
                     .onChange(of: messages.count) { _ in
-                        withAnimation {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                             if let last = messages.last {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
@@ -187,8 +188,19 @@ public struct AethelgardChatView: View {
                     }
                     .onChange(of: isThinking) { thinking in
                         if thinking {
-                            withAnimation {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                 proxy.scrollTo("thinking_indicator", anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: isInputFocused) { focused in
+                        if focused {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                    if let last = messages.last {
+                                        proxy.scrollTo(last.id, anchor: .bottom)
+                                    }
+                                }
                             }
                         }
                     }
@@ -222,9 +234,10 @@ public struct AethelgardChatView: View {
                 
                 Divider()
                 
-                // Input Bar
+                // Input Bar (Reliable keyboard avoidance)
                 HStack(spacing: 10) {
                     TextField("Pregunta a Aethelgard sobre tu estudio...", text: $inputText)
+                        .focused($isInputFocused)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(Color(UIColor.secondarySystemGroupedBackground))
@@ -247,35 +260,41 @@ public struct AethelgardChatView: View {
                 .padding(.vertical, 10)
                 .background(Color(UIColor.systemGroupedBackground))
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                dismissKeyboardWithBounce()
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Button(action: {
                         HapticManager.shared.light()
                         showingSessionsSheet = true
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             Text(currentSession.title)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.secondary)
                         }
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 5)
                         .background(Color(UIColor.secondarySystemGroupedBackground))
                         .cornerRadius(12)
                     }
+                    .frame(maxWidth: 145)
                 }
                 
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
                         createNewSession()
                     }) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "plus")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.system(size: 12, weight: .bold))
                             Text("Nueva")
                                 .font(.system(size: 13, weight: .semibold))
                         }
@@ -284,7 +303,7 @@ public struct AethelgardChatView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 14) {
+                    HStack(spacing: 12) {
                         Button(action: {
                             HapticManager.shared.light()
                             showingApiSettings = true
@@ -303,15 +322,6 @@ public struct AethelgardChatView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                }
-                
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Ocultar") {
-                        KeyboardHelper.hide()
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.orange)
                 }
             }
             .sheet(isPresented: $showingApiSettings) {
@@ -342,6 +352,16 @@ public struct AethelgardChatView: View {
             }
             .onDisappear {
                 activeTask?.cancel()
+            }
+        }
+    }
+    
+    private func dismissKeyboardWithBounce() {
+        if isInputFocused {
+            HapticManager.shared.light()
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
+                isInputFocused = false
+                KeyboardHelper.hide()
             }
         }
     }
@@ -476,8 +496,10 @@ public struct AethelgardChatView: View {
                                 
                                 var chapters: [ExamChapter] = []
                                 if let rawChapters = dict["chapters"] as? [[String: Any]] {
+                                    let calendar = Calendar.current
+                                    let startOfToday = calendar.startOfDay(for: Date())
                                     for (cIdx, chapDict) in rawChapters.enumerated() {
-                                        let chapTitle = chapDict["title"] as? String ?? "Fase \(cIdx + 1): Preparación"
+                                        let chapTitle = chapDict["title"] as? String ?? "Día \(cIdx + 1): Preparación"
                                         var steps: [ExamStep] = []
                                         if let rawSteps = chapDict["steps"] as? [[String: Any]] {
                                             for st in rawSteps {
@@ -488,7 +510,8 @@ public struct AethelgardChatView: View {
                                         if steps.isEmpty {
                                             steps = [ExamStep(title: "Repaso conceptual"), ExamStep(title: "Resolución de ejercicios")]
                                         }
-                                        chapters.append(ExamChapter(title: chapTitle, steps: steps))
+                                        let recDate = calendar.date(byAdding: .day, value: cIdx, to: startOfToday)
+                                        chapters.append(ExamChapter(title: chapTitle, recommendedDate: recDate, steps: steps))
                                     }
                                 }
                                 
@@ -534,7 +557,7 @@ struct ChatBubbleRow: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Color(UIColor.secondarySystemGroupedBackground).opacity(1.3))
+                    .background(Color.orange)
                     .cornerRadius(18)
             } else {
                 Circle()
@@ -632,7 +655,7 @@ struct ChatSessionsSheet: View {
                 
                 Section(header: Text("Conversaciones guardadas")) {
                     ForEach(sessions) { session in
-                        HStack {
+                        HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(session.title)
                                     .font(.system(size: 15, weight: session.id == activeSessionId ? .bold : .medium))
@@ -647,23 +670,47 @@ struct ChatSessionsSheet: View {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.orange)
+                                    .padding(.trailing, 4)
                             }
+                            
+                            Button(role: .destructive, action: {
+                                HapticManager.shared.medium()
+                                onDeleteSession(session.id)
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.red.opacity(0.85))
+                                    .padding(8)
+                            }
+                            .buttonStyle(.borderless)
                         }
                         .contentShape(Rectangle())
                         .onTapGesture {
                             onSelectSession(session.id)
                         }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                HapticManager.shared.medium()
+                                onDeleteSession(session.id)
+                            } label: {
+                                Label("Eliminar", systemImage: "trash")
+                            }
+                        }
                     }
                     .onDelete { indexSet in
-                        for index in indexSet {
-                            onDeleteSession(sessions[index].id)
-                        }
+                        let idsToDelete = indexSet.map { sessions[$0].id }
+                        idsToDelete.forEach(onDeleteSession)
                     }
                 }
             }
             .navigationTitle("Sesiones")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    EditButton()
+                        .font(.system(size: 15))
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Cerrar") {
                         dismiss()

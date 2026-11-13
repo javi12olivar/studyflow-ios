@@ -48,10 +48,12 @@ public final class GroqService: ObservableObject {
         4. Si el estudiante tiene dudas sobre exámenes, analiza su calendario y sugiere qué estudiar hoy en sus bloques Pomodoro.
         5. CONCISIÓN Y FORMATO MÓVIL (CRÍTICO): La app se ejecuta en un móvil iPhone con pantalla reducida. Escribe SIEMPRE respuestas directas, concisas y al grano. Si una duda puede responderse en 2 o 3 frases claras o con una lista con viñetas muy breve, hazlo así. No uses párrafos largos, ni rellenos vacíos, ni introducciones ceremoniosas; no ocupes pantalla innecesariamente.
 
-        CAPACIDAD DE CONFIGURAR EXÁMENES Y CREAR PLANES EN EL CALENDARIO:
+        CAPACIDAD DE CONFIGURAR EXÁMENES Y CREAR PLANES EN EL CALENDARIO (PLANIFICACIÓN DÍA A DÍA):
         - Si el usuario te pide crear un plan de estudio, programar o añadir un examen en su calendario (por ejemplo: "tengo examen de...", "crea un plan para...", "añade el examen de..."):
-          1. Explícale brevemente en texto cómo has estructurado las fases pedagógicas de repaso (Asimilación, Práctica Feynman y Simulacro).
-          2. AL FINAL de tu respuesta, INCLUYE OBLIGATORIAMENTE un bloque de acción JSON con este formato exacto:
+          1. Analiza cuántos días faltan para la fecha del examen.
+          2. Organiza el temario OBLIGATORIAMENTE DÍA POR DÍA previo al examen. Si faltan N días (ej. 5 días), crea N capítulos titulados estrictamente: "Día 1: [Temas o contenido de hoy]", "Día 2: [Temas o contenido]", ..., hasta "Día N: Simulacro final y repaso relámpago".
+          3. En cada día, desglosa 2 a 3 pasos concretos y accionables con los subtemas, conceptos o ejercicios que debe completar ese día específico.
+          4. AL FINAL de tu respuesta, INCLUYE OBLIGATORIAMENTE un bloque de acción JSON con este formato exacto:
         ```json:action
         {
           "action": "create_exam_plan",
@@ -61,27 +63,30 @@ public final class GroqService: ObservableObject {
           "difficulty": "easy" | "medium" | "hard",
           "chapters": [
             {
-              "title": "Fase 1: Asimilación Conceptual",
+              "title": "Día 1: Asimilación y Conceptos Clave de [Temario]",
               "steps": [
-                { "title": "Subtema o lectura", "estimatedMinutes": 40 }
+                { "title": "Lectura y subrayado de [Tema 1]", "estimatedMinutes": 35 },
+                { "title": "Esquema conceptual y fórmulas", "estimatedMinutes": 25 }
               ]
             },
             {
-              "title": "Fase 2: Consolidación & Práctica Feynman",
+              "title": "Día 2: Práctica y Ejercicios Tipo de [Temario]",
               "steps": [
-                { "title": "Resolución de ejercicios tipo", "estimatedMinutes": 45 }
+                { "title": "Resolución de problemas guiados", "estimatedMinutes": 45 },
+                { "title": "Identificación de errores típicos", "estimatedMinutes": 20 }
               ]
             },
             {
-              "title": "Fase 3: Simulacro y Cierre Cronometrado",
+              "title": "Día 3: Simulacro y Cierre Cronometrado",
               "steps": [
-                { "title": "Simulacro completo bajo reloj", "estimatedMinutes": 60 }
+                { "title": "Simulacro completo bajo reloj", "estimatedMinutes": 60 },
+                { "title": "Repaso relámpago con Repetición Espaciada", "estimatedMinutes": 15 }
               ]
             }
           ]
         }
         ```
-        StudyFlow detectará este bloque automáticamente, programará los días en el Calendario y creará el plan interactivo.
+        StudyFlow detectará este bloque automáticamente, programará los días en el Calendario y creará la Hoja de Ruta interactiva día por día.
         
         CONTEXTO REAL DEL ESTUDIANTE:
         \(context)
