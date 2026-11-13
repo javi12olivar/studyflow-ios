@@ -71,8 +71,24 @@ public struct QuizQuestion: Identifiable, Codable, Equatable, Sendable {
 }
 
 // MARK: - Gemini API DTO Models
+private struct GeminiInlineData: Codable {
+    let mimeType: String
+    let data: String
+}
+
 private struct GeminiContentPart: Codable {
-    let text: String
+    let text: String?
+    let inlineData: GeminiInlineData?
+    
+    init(text: String) {
+        self.text = text
+        self.inlineData = nil
+    }
+    
+    init(mimeType: String, base64Data: String) {
+        self.text = nil
+        self.inlineData = GeminiInlineData(mimeType: mimeType, data: base64Data)
+    }
 }
 
 private struct GeminiContent: Codable {
@@ -142,6 +158,67 @@ public final class GeminiService: ObservableObject {
         } else if let data = key.data(using: .utf8) {
             _ = KeychainHelper.save(key: keyStorageAccount, data: data)
         }
+    }
+    
+    // MARK: - Multimodal Vision OCR (Gemini 3.1 Flash-Lite)
+    public func extractContentFromImage(imageData: Data, mimeType: String = "image/jpeg") async -> String? {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key.count > 5 else {
+            Self.logger.warning("Gemini API Key missing for vision OCR")
+            return nil
+        }
+        
+        let prompt = """
+        Transcribe minuciosamente todo el texto, conceptos y fórmulas matemáticas de esta imagen en LaTeX estructurado ($...$ o $$...$$).
+        Si contiene temario, esquemas o ejercicios, estructura los apartados claramente con títulos y viñetas para que otro modelo de IA pedagógico pueda planificarlo o resolverlo paso a paso.
+        """
+        
+        let base64 = imageData.base64EncodedString()
+        let payload = GeminiRequest(
+            contents: [
+                GeminiContent(parts: [
+                    GeminiContentPart(text: prompt),
+                    GeminiContentPart(mimeType: mimeType, base64Data: base64)
+                ])
+            ],
+            generationConfig: nil
+        )
+        
+        let modelsToTry = [
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-flash-latest",
+            "gemini-2.5-flash"
+        ]
+        
+        for model in modelsToTry {
+            guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
+                continue
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+            
+            do {
+                request.httpBody = try JSONEncoder().encode(payload)
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200 {
+                    let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
+                    if let text = decoded.candidates?.first?.content?.parts?.first?.text,
+                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Self.logger.info("Vision OCR succeeded with model \(model)")
+                        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+            } catch {
+                Self.logger.warning("Vision OCR failed with \(model): \(error.localizedDescription)")
+            }
+        }
+        
+        return nil
     }
     
     // MARK: - Generate Exam Plan

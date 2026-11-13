@@ -14,6 +14,12 @@ public struct AIPlanCreationSheet: View {
     @State private var showingApiSettings: Bool = false
     @State private var generationTask: Task<Void, Never>? = nil
     
+    // Vision OCR Scanner
+    @State private var isExtractingVision: Bool = false
+    @State private var showingScanPicker: Bool = false
+    @State private var scanPickerSource: UIImagePickerController.SourceType = .camera
+    @State private var visionTask: Task<Void, Never>? = nil
+    
     public init(planManager: ExamPlanManager) {
         self.planManager = planManager
     }
@@ -32,9 +38,49 @@ public struct AIPlanCreationSheet: View {
                     }
                 }
                 
-                Section(header: Text("Temario o Apuntes a Desglosar (Opcional)")) {
+                Section(header: Text("Temario o Apuntes a Desglosar")) {
                     TextEditor(text: $notes)
-                        .frame(minHeight: 120)
+                        .frame(minHeight: 110)
+                    
+                    if isExtractingVision {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Gemini 3.1 Flash-Lite extrayendo temario y fórmulas...")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            scanPickerSource = .camera
+                            showingScanPicker = true
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "camera.fill")
+                                Text("Foto de Apuntes")
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            scanPickerSource = .photoLibrary
+                            showingScanPicker = true
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "photo.on.rectangle")
+                                Text("Galería")
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.vertical, 2)
                 }
                 
                 Section {
@@ -86,15 +132,43 @@ public struct AIPlanCreationSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") {
                         generationTask?.cancel()
+                        visionTask?.cancel()
                         dismiss()
                     }
                 }
             }
             .onDisappear {
                 generationTask?.cancel()
+                visionTask?.cancel()
             }
             .sheet(isPresented: $showingApiSettings) {
                 ApiConfigurationSheet()
+            }
+            .sheet(isPresented: $showingScanPicker) {
+                ImagePickerView(sourceType: scanPickerSource) { pickedImg in
+                    processScannedImage(pickedImg)
+                }
+            }
+        }
+    }
+    
+    private func processScannedImage(_ img: UIImage) {
+        isExtractingVision = true
+        HapticManager.shared.light()
+        
+        visionTask?.cancel()
+        visionTask = Task { @MainActor in
+            defer { isExtractingVision = false }
+            guard let data = img.jpegData(compressionQuality: 0.8) else { return }
+            
+            if let extracted = await GeminiService.shared.extractContentFromImage(imageData: data) {
+                guard !Task.isCancelled else { return }
+                if notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    notes = extracted
+                } else {
+                    notes += "\n\n" + extracted
+                }
+                HapticManager.shared.success()
             }
         }
     }

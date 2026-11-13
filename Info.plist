@@ -30,5 +30,9 @@
     <array>
         <string>UIInterfaceOrientationPortrait</string>
     </array>
+    <key>NSCameraUsageDescription</key>
+    <string>StudyFlow necesita acceso a la cámara para escanear y transcribir tus apuntes, pizarras y ejercicios con IA.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>StudyFlow necesita acceso a tu galería para importar fotos de apuntes, exámenes y temarios.</string>
 </dict>
 </plist>

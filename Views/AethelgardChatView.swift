@@ -8,13 +8,36 @@ public struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
     public let text: String
     public let createdPlan: ExamPlan?
     public let timestamp: Date
+    public let imageBase64: String?
     
-    public init(id: UUID = UUID(), isUser: Bool, text: String, createdPlan: ExamPlan? = nil, timestamp: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        isUser: Bool,
+        text: String,
+        createdPlan: ExamPlan? = nil,
+        timestamp: Date = Date(),
+        imageBase64: String? = nil
+    ) {
         self.id = id
         self.isUser = isUser
         self.text = text
         self.createdPlan = createdPlan
         self.timestamp = timestamp
+        self.imageBase64 = imageBase64
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, isUser, text, createdPlan, timestamp, imageBase64
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.isUser = try container.decodeIfPresent(Bool.self, forKey: .isUser) ?? false
+        self.text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        self.createdPlan = try container.decodeIfPresent(ExamPlan.self, forKey: .createdPlan)
+        self.timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp) ?? Date()
+        self.imageBase64 = try container.decodeIfPresent(String.self, forKey: .imageBase64)
     }
 }
 
@@ -47,6 +70,12 @@ public struct AethelgardChatView: View {
     @State private var isThinking: Bool = false
     @State private var activeTask: Task<Void, Never>? = nil
     @FocusState private var isInputFocused: Bool
+    
+    // Multimodal Vision System (Gemini 3.1 Flash-Lite + Groq 120B)
+    @State private var attachedImage: UIImage? = nil
+    @State private var showingImagePicker: Bool = false
+    @State private var pickerSourceType: UIImagePickerController.SourceType = .photoLibrary
+    @State private var visionStatusMessage: String? = nil
     
     private let defaultWelcome = "¡Hola! Soy **Aethelgard**, tu tutor pedagógico de StudyFlow.\n\nEstoy aquí para guiarte en tu preparación de exámenes, resolver dudas conceptuales, optimizar tus bloques Pomodoro y aplicar la técnica de Repetición Espaciada para que nada se te olvide.\n\n¿En qué asignatura o tema nos enfocamos hoy?"
     
@@ -156,11 +185,23 @@ public struct AethelgardChatView: View {
                                 ChatBubbleRow(message: msg)
                             }
                             
-                            if isThinking {
+                            if let status = visionStatusMessage {
                                 HStack(spacing: 8) {
                                     ProgressView()
                                         .scaleEffect(0.8)
-                                    Text("Aethelgard está estructurando la respuesta...")
+                                    Text(status)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .id("thinking_indicator")
+                            } else if isThinking {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Aethelgard (Groq 120B) está estructurando la respuesta...")
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundColor(.secondary)
                                     Spacer()
@@ -234,9 +275,70 @@ public struct AethelgardChatView: View {
                 
                 Divider()
                 
+                // Attached Photo Preview
+                if let img = attachedImage {
+                    HStack(spacing: 10) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .cornerRadius(8)
+                            .clipped()
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Apuntes adjuntos para visión")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.primary)
+                            Text("Gemini 3.1 Flash-Lite extraerá fórmulas y texto para Groq 120B")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            HapticManager.shared.light()
+                            withAnimation { attachedImage = nil }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.gray.opacity(0.8))
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                }
+                
                 // Input Bar (Reliable keyboard avoidance)
-                HStack(spacing: 10) {
-                    TextField("Pregunta a Aethelgard sobre tu estudio...", text: $inputText)
+                HStack(spacing: 8) {
+                    Menu {
+                        Button(action: {
+                            pickerSourceType = .camera
+                            showingImagePicker = true
+                        }) {
+                            Label("Hacer Foto de Apuntes", systemImage: "camera")
+                        }
+                        
+                        Button(action: {
+                            pickerSourceType = .photoLibrary
+                            showingImagePicker = true
+                        }) {
+                            Label("Elegir de Galería", systemImage: "photo.on.rectangle")
+                        }
+                    } label: {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 17))
+                            .foregroundColor(.orange)
+                            .padding(8)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .clipShape(Circle())
+                    }
+                    
+                    TextField("Pregunta o sube foto de tus apuntes...", text: $inputText)
                         .focused($isInputFocused)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -252,9 +354,9 @@ public struct AethelgardChatView: View {
                     }) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 32))
-                            .foregroundColor(inputText.trimmingCharacters(in: .whitespaces).isEmpty ? .gray.opacity(0.4) : .orange)
+                            .foregroundColor((inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachedImage == nil) ? .gray.opacity(0.4) : .orange)
                     }
-                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty || isThinking)
+                    .disabled((inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachedImage == nil) || isThinking)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -347,6 +449,11 @@ public struct AethelgardChatView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingImagePicker) {
+                ImagePickerView(sourceType: pickerSourceType) { picked in
+                    attachedImage = picked
+                }
+            }
             .onAppear {
                 loadSessions()
             }
@@ -421,20 +528,37 @@ public struct AethelgardChatView: View {
     
     private func sendMessage(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        let photoToSend = attachedImage
+        guard !trimmed.isEmpty || photoToSend != nil else { return }
         
+        // Clear input and attachment immediately
+        inputText = ""
+        attachedImage = nil
         HapticManager.shared.light()
-        let userMsg = ChatMessage(isUser: true, text: trimmed)
+        
+        var thumbBase64: String? = nil
+        var jpegDataToSend: Data? = nil
+        if let photo = photoToSend {
+            jpegDataToSend = photo.jpegData(compressionQuality: 0.8)
+            let thumbSize = CGSize(width: 300, height: 220)
+            let renderer = UIGraphicsImageRenderer(size: thumbSize)
+            let thumb = renderer.image { _ in
+                photo.draw(in: CGRect(origin: .zero, size: thumbSize))
+            }
+            thumbBase64 = thumb.jpegData(compressionQuality: 0.6)?.base64EncodedString()
+        }
+        
+        let displayText = trimmed.isEmpty ? (photoToSend != nil ? "📷 Foto de apuntes adjuntada" : "") : trimmed
+        let userMsg = ChatMessage(isUser: true, text: displayText, imageBase64: thumbBase64)
         appendMessageToActiveSession(userMsg)
         
         if currentSession.title == "Nueva sesión" {
             if let idx = sessions.firstIndex(where: { $0.id == activeSessionId }) {
-                sessions[idx].title = String(trimmed.prefix(32))
+                sessions[idx].title = String(displayText.prefix(32))
                 saveSessions()
             }
         }
         
-        inputText = ""
         isThinking = true
         
         // Build Dynamic Student Context
@@ -450,21 +574,45 @@ public struct AethelgardChatView: View {
         
         activeTask?.cancel()
         activeTask = Task { @MainActor in
-            defer { isThinking = false }
+            defer {
+                isThinking = false
+                visionStatusMessage = nil
+            }
+            
+            var promptToSend = trimmed
+            
+            // Step 1: Multimodal OCR via Gemini 3.1 Flash-Lite if photo attached
+            if let imgData = jpegDataToSend {
+                visionStatusMessage = "Gemini 3.1 Flash-Lite extrayendo texto y fórmulas LaTeX..."
+                if let extracted = await GeminiService.shared.extractContentFromImage(imageData: imgData) {
+                    promptToSend = """
+                    [CONTENIDO EXTRAÍDO DE LOS APUNTES CON OCR Y FÓRMULAS LATEX]:
+                    \(extracted)
+                    
+                    \(trimmed.isEmpty ? "Analiza detalladamente estos apuntes, explica los conceptos y fórmulas matemáticas con claridad pedagógica y resuelve cualquier ejercicio que aparezca." : trimmed)
+                    """
+                } else {
+                    promptToSend = trimmed.isEmpty ? "No pude extraer el texto de la foto con claridad. Por favor, explícame qué contiene." : trimmed
+                }
+                visionStatusMessage = nil
+            }
+            
+            guard !Task.isCancelled else { return }
             var responseText: String? = nil
             
+            // Step 2: Reasoning & Tutoring via Groq 120B
             if GroqService.shared.apiKey.count > 5 {
-                responseText = await GroqService.shared.chat(message: trimmed, context: context)
+                responseText = await GroqService.shared.chat(message: promptToSend, context: context)
             }
             guard !Task.isCancelled else { return }
             
             if responseText == nil && MistralService.shared.apiKey.count > 5 {
-                responseText = await MistralService.shared.chat(message: trimmed, context: context)
+                responseText = await MistralService.shared.chat(message: promptToSend, context: context)
             }
             guard !Task.isCancelled else { return }
             
             if responseText == nil {
-                responseText = await GeminiService.shared.chatWithAethelgard(message: trimmed, context: context)
+                responseText = await GeminiService.shared.chatWithAethelgard(message: promptToSend, context: context)
             }
             guard !Task.isCancelled else { return }
             
@@ -552,13 +700,32 @@ struct ChatBubbleRow: View {
         HStack(alignment: .top, spacing: 10) {
             if message.isUser {
                 Spacer(minLength: 40)
-                Text(LocalizedStringKey(message.text))
-                    .font(.system(size: 14))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.orange)
-                    .cornerRadius(18)
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let b64 = message.imageBase64,
+                       let data = Data(base64Encoded: b64),
+                       let img = UIImage(data: data) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: 220, maxHeight: 160)
+                            .cornerRadius(14)
+                            .clipped()
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    
+                    if !message.text.isEmpty {
+                        Text(LocalizedStringKey(message.text))
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.orange)
+                            .cornerRadius(18)
+                    }
+                }
             } else {
                 Circle()
                     .fill(Color.orange.opacity(0.15))
@@ -655,35 +822,16 @@ struct ChatSessionsSheet: View {
                 
                 Section(header: Text("Conversaciones guardadas")) {
                     ForEach(sessions) { session in
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(session.title)
-                                    .font(.system(size: 15, weight: session.id == activeSessionId ? .bold : .medium))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(1)
-                                Text("\(session.messages.count) mensajes")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            if session.id == activeSessionId {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.orange)
-                                    .padding(.trailing, 4)
-                            }
-                            
-                            Button(role: .destructive, action: {
-                                HapticManager.shared.medium()
-                                onDeleteSession(session.id)
-                            }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.red.opacity(0.85))
-                                    .padding(8)
-                            }
-                            .buttonStyle(.borderless)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(session.title)
+                                .font(.system(size: 15, weight: session.id == activeSessionId ? .bold : .medium))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            Text("\(session.messages.count) mensajes")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
                         }
+                        .padding(.vertical, 4)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             onSelectSession(session.id)
