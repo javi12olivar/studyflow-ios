@@ -17,6 +17,7 @@ public struct AIPlanCreationSheet: View {
     // Vision OCR Scanner
     @State private var isExtractingVision: Bool = false
     @State private var showingScanPicker: Bool = false
+    @State private var showingDocPicker: Bool = false
     @State private var scanPickerSource: UIImagePickerController.SourceType = .camera
     @State private var visionTask: Task<Void, Never>? = nil
     
@@ -53,16 +54,16 @@ public struct AIPlanCreationSheet: View {
                         .padding(.vertical, 4)
                     }
                     
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         Button(action: {
                             scanPickerSource = .camera
                             showingScanPicker = true
                         }) {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 4) {
                                 Image(systemName: "camera.fill")
-                                Text("Foto de Apuntes")
+                                Text("Foto")
                             }
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(.borderless)
                         
@@ -72,11 +73,24 @@ public struct AIPlanCreationSheet: View {
                             scanPickerSource = .photoLibrary
                             showingScanPicker = true
                         }) {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 4) {
                                 Image(systemName: "photo.on.rectangle")
                                 Text("Galería")
                             }
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            showingDocPicker = true
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.badge.plus")
+                                Text("PDF / Doc")
+                            }
+                            .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(.borderless)
                     }
@@ -149,6 +163,37 @@ public struct AIPlanCreationSheet: View {
                     processScannedImage(pickedImg)
                 }
             }
+            .sheet(isPresented: $showingDocPicker) {
+                DocumentPickerView { doc in
+                    processPickedDocument(doc)
+                }
+            }
+        }
+    }
+    
+    private func processPickedDocument(_ doc: DocumentAttachment) {
+        isExtractingVision = true
+        HapticManager.shared.light()
+        
+        visionTask?.cancel()
+        visionTask = Task { @MainActor in
+            defer { isExtractingVision = false }
+            
+            if let extracted = await GeminiService.shared.extractContentFromDocument(
+                fileData: doc.fileData,
+                mimeType: doc.mimeType,
+                filename: doc.filename
+            ) {
+                guard !Task.isCancelled else { return }
+                if notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    notes = extracted
+                } else {
+                    notes += "\n\n" + extracted
+                }
+                HapticManager.shared.success()
+            } else {
+                HapticManager.shared.error()
+            }
         }
     }
     
@@ -169,6 +214,8 @@ public struct AIPlanCreationSheet: View {
                     notes += "\n\n" + extracted
                 }
                 HapticManager.shared.success()
+            } else {
+                HapticManager.shared.error()
             }
         }
     }

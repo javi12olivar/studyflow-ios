@@ -1,6 +1,7 @@
 ﻿import Foundation
 import Security
 import OSLog
+import PDFKit
 
 // MARK: - Native Secure Keychain Helper
 public enum KeychainHelper {
@@ -185,14 +186,14 @@ public final class GeminiService: ObservableObject {
         )
         
         let modelsToTry = [
-            "gemini-3.1-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-3.7-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
             "gemini-flash-latest",
             "gemini-2.5-flash"
         ]
         
         for model in modelsToTry {
+            guard !Task.isCancelled else { return nil }
             guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
                 continue
             }
@@ -215,6 +216,115 @@ public final class GeminiService: ObservableObject {
                 }
             } catch {
                 Self.logger.warning("Vision OCR failed with \(model): \(error.localizedDescription)")
+            }
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Multimodal Document & File Intelligence (PDF, Word, Text)
+    public func extractContentFromDocument(
+        fileData: Data,
+        mimeType: String,
+        filename: String
+    ) async -> String? {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ext = (filename as NSString).pathExtension.lowercased()
+        
+        // 1. Fast path for plain text, markdown, CSV (zero latency / no API quota used)
+        if ext == "txt" || ext == "md" || ext == "csv" || mimeType.starts(with: "text/") {
+            if let text = String(data: fileData, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let latinText = String(data: fileData, encoding: .isoLatin1), !latinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return latinText.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        
+        // 2. Fast path for Word (.docx) & Rich Text (.rtf) via native NSAttributedString
+        if ext == "docx" || ext == "rtf" {
+            let docType: NSAttributedString.DocumentType = ext == "docx" ? .officeOpenXML : .rtf
+            if let attrString = try? NSAttributedString(data: fileData, options: [.documentType: docType], documentAttributes: nil),
+               !attrString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let text = attrString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    return text
+                }
+            }
+        }
+        
+        // 3. Multimodal Analysis via Gemini (PDFs with LaTeX, formulas, tables, diagrams)
+        if key.count > 5 {
+            let prompt = """
+            Analiza minuciosamente este documento académico ("\(filename)").
+            Extrae y resume con máxima fidelidad todo el temario, conceptos clave, teoremas, definiciones y fórmulas matemáticas en LaTeX estructurado ($...$ o $$...$$).
+            Estructura los apartados pedagógicamente con títulos claros y viñetas para que otro modelo de IA pueda resolver dudas, generar resúmenes o planificar repasos día a día.
+            """
+            
+            // Offload base64 encoding to background thread
+            let base64 = await Task.detached(priority: .userInitiated) {
+                fileData.base64EncodedString()
+            }.value
+            
+            let actualMime = mimeType == "application/octet-stream" ? (ext == "pdf" ? "application/pdf" : "text/plain") : mimeType
+            
+            let payload = GeminiRequest(
+                contents: [
+                    GeminiContent(parts: [
+                        GeminiContentPart(text: prompt),
+                        GeminiContentPart(mimeType: actualMime, base64Data: base64)
+                    ])
+                ],
+                generationConfig: nil
+            )
+            
+            let modelsToTry = [
+                "gemini-2.0-flash",
+                "gemini-1.5-flash",
+                "gemini-flash-latest",
+                "gemini-2.5-flash"
+            ]
+            
+            for model in modelsToTry {
+                guard !Task.isCancelled else { return nil }
+                guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
+                    continue
+                }
+                
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                
+                do {
+                    request.httpBody = try JSONEncoder().encode(payload)
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200 {
+                        let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
+                        if let text = decoded.candidates?.first?.content?.parts?.first?.text,
+                           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Self.logger.info("Document extraction succeeded with model \(model)")
+                            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+                } catch {
+                    Self.logger.warning("Document extraction failed with \(model): \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        // 4. Local Fallback for PDF text extraction via PDFKit (offloaded to background thread)
+        if ext == "pdf" {
+            let extractedPDF = await Task.detached(priority: .userInitiated) { () -> String? in
+                guard let pdf = PDFDocument(data: fileData), let pdfString = pdf.string,
+                      !pdfString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return nil
+                }
+                return pdfString.trimmingCharacters(in: .whitespacesAndNewlines)
+            }.value
+            
+            if let result = extractedPDF {
+                return result
             }
         }
         

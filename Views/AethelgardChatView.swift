@@ -73,7 +73,9 @@ public struct AethelgardChatView: View {
     
     // Multimodal Vision System (Gemini 3.1 Flash-Lite + Groq 120B)
     @State private var attachedImage: UIImage? = nil
+    @State private var attachedDocument: DocumentAttachment? = nil
     @State private var showingImagePicker: Bool = false
+    @State private var showingDocumentPicker: Bool = false
     @State private var pickerSourceType: UIImagePickerController.SourceType = .photoLibrary
     @State private var visionStatusMessage: String? = nil
     
@@ -313,6 +315,48 @@ public struct AethelgardChatView: View {
                     .padding(.top, 6)
                 }
                 
+                // Attached Document Preview
+                if let doc = attachedDocument {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(doc.isPDF ? Color.red.opacity(0.15) : Color.blue.opacity(0.15))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: doc.systemIconName)
+                                .font(.system(size: 22))
+                                .foregroundColor(doc.isPDF ? .red : .blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(doc.filename)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text("\(doc.fileExtension) • \(doc.formattedSize) • Multimodal Gemini")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            HapticManager.shared.light()
+                            withAnimation { attachedDocument = nil }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.gray.opacity(0.8))
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color(UIColor.secondarySystemGroupedBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                }
+                
                 // Input Bar (Reliable keyboard avoidance)
                 HStack(spacing: 8) {
                     Menu {
@@ -329,16 +373,22 @@ public struct AethelgardChatView: View {
                         }) {
                             Label("Elegir de Galería", systemImage: "photo.on.rectangle")
                         }
+                        
+                        Button(action: {
+                            showingDocumentPicker = true
+                        }) {
+                            Label("Subir Documento o PDF", systemImage: "doc.badge.plus")
+                        }
                     } label: {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 17))
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.orange)
                             .padding(8)
                             .background(Color(UIColor.secondarySystemGroupedBackground))
                             .clipShape(Circle())
                     }
                     
-                    TextField("Pregunta o sube foto de tus apuntes...", text: $inputText)
+                    TextField("Pregunta, foto o PDF de tus apuntes...", text: $inputText)
                         .focused($isInputFocused)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -354,9 +404,9 @@ public struct AethelgardChatView: View {
                     }) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 32))
-                            .foregroundColor((inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachedImage == nil) ? .gray.opacity(0.4) : .orange)
+                            .foregroundColor((inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachedImage == nil && attachedDocument == nil) ? .gray.opacity(0.4) : .orange)
                     }
-                    .disabled((inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachedImage == nil) || isThinking)
+                    .disabled((inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachedImage == nil && attachedDocument == nil) || isThinking)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -451,7 +501,14 @@ public struct AethelgardChatView: View {
             }
             .sheet(isPresented: $showingImagePicker) {
                 ImagePickerView(sourceType: pickerSourceType) { picked in
+                    attachedDocument = nil
                     attachedImage = picked
+                }
+            }
+            .sheet(isPresented: $showingDocumentPicker) {
+                DocumentPickerView { pickedDoc in
+                    attachedImage = nil
+                    attachedDocument = pickedDoc
                 }
             }
             .onAppear {
@@ -529,11 +586,13 @@ public struct AethelgardChatView: View {
     private func sendMessage(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let photoToSend = attachedImage
-        guard !trimmed.isEmpty || photoToSend != nil else { return }
+        let docToSend = attachedDocument
+        guard !trimmed.isEmpty || photoToSend != nil || docToSend != nil else { return }
         
-        // Clear input and attachment immediately
+        // Clear input and attachments immediately
         inputText = ""
         attachedImage = nil
+        attachedDocument = nil
         HapticManager.shared.light()
         
         var thumbBase64: String? = nil
@@ -548,7 +607,15 @@ public struct AethelgardChatView: View {
             thumbBase64 = thumb.jpegData(compressionQuality: 0.6)?.base64EncodedString()
         }
         
-        let displayText = trimmed.isEmpty ? (photoToSend != nil ? "📷 Foto de apuntes adjuntada" : "") : trimmed
+        let displayText: String
+        if let doc = docToSend {
+            displayText = trimmed.isEmpty ? "📄 [\(doc.filename)]" : "📄 [\(doc.filename)]\n\(trimmed)"
+        } else if photoToSend != nil {
+            displayText = trimmed.isEmpty ? "📷 Foto de apuntes adjuntada" : trimmed
+        } else {
+            displayText = trimmed
+        }
+        
         let userMsg = ChatMessage(isUser: true, text: displayText, imageBase64: thumbBase64)
         appendMessageToActiveSession(userMsg)
         
@@ -581,7 +648,7 @@ public struct AethelgardChatView: View {
             
             var promptToSend = trimmed
             
-            // Step 1: Multimodal OCR via Gemini 3.1 Flash-Lite if photo attached
+            // Step 1A: Multimodal OCR via Gemini 3.1 Flash-Lite if photo attached
             if let imgData = jpegDataToSend {
                 visionStatusMessage = "Gemini 3.1 Flash-Lite extrayendo texto y fórmulas LaTeX..."
                 if let extracted = await GeminiService.shared.extractContentFromImage(imageData: imgData) {
@@ -593,6 +660,26 @@ public struct AethelgardChatView: View {
                     """
                 } else {
                     promptToSend = trimmed.isEmpty ? "No pude extraer el texto de la foto con claridad. Por favor, explícame qué contiene." : trimmed
+                }
+                visionStatusMessage = nil
+            }
+            
+            // Step 1B: Multimodal Document Extraction via Gemini + PDFKit if document attached
+            if let doc = docToSend {
+                visionStatusMessage = "Gemini analizando \(doc.filename)..."
+                if let extracted = await GeminiService.shared.extractContentFromDocument(
+                    fileData: doc.fileData,
+                    mimeType: doc.mimeType,
+                    filename: doc.filename
+                ) {
+                    promptToSend = """
+                    [CONTENIDO EXTRAÍDO DEL DOCUMENTO "\(doc.filename)"]:
+                    \(extracted)
+                    
+                    \(trimmed.isEmpty ? "Analiza detalladamente este documento académico, explica los conceptos y fórmulas matemáticas con claridad pedagógica y asísteme en su estudio." : trimmed)
+                    """
+                } else {
+                    promptToSend = trimmed.isEmpty ? "No pude extraer el contenido del documento \"\(doc.filename)\". Por favor, indícame qué contiene o prueba con otro archivo." : trimmed
                 }
                 visionStatusMessage = nil
             }
