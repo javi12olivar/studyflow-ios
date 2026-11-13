@@ -30,6 +30,30 @@
     <array>
         <string>UIInterfaceOrientationPortrait</string>
     </array>
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>AppIcon</string>
+            </array>
+            <key>CFBundleIconName</key>
+            <string>AppIcon</string>
+        </dict>
+    </dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>AppIcon</string>
+            </array>
+            <key>CFBundleIconName</key>
+            <string>AppIcon</string>
+        </dict>
+    </dict>
     <key>NSCameraUsageDescription</key>
     <string>StudyFlow necesita acceso a la cámara para escanear y transcribir tus apuntes, pizarras y ejercicios con IA.</string>
     <key>NSPhotoLibraryUsageDescription</key>
