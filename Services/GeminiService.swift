@@ -241,10 +241,9 @@ public final class GeminiService: ObservableObject {
             }
         }
         
-        // 2. Fast path for Word (.docx) & Rich Text (.rtf) via native NSAttributedString
-        if ext == "docx" || ext == "rtf" {
-            let docType: NSAttributedString.DocumentType = ext == "docx" ? .officeOpenXML : .rtf
-            if let attrString = try? NSAttributedString(data: fileData, options: [.documentType: docType], documentAttributes: nil),
+        // 2. Fast path for Rich Text (.rtf) via native NSAttributedString
+        if ext == "rtf" {
+            if let attrString = try? NSAttributedString(data: fileData, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil),
                !attrString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let text = attrString.string.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty {

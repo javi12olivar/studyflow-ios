@@ -42,6 +42,12 @@ public final class HapticManager {
         generator.prepare()
         generator.notificationOccurred(.warning)
     }
+    
+    public func error() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.error)
+    }
 }
 
 // MARK: - Audio Manager
